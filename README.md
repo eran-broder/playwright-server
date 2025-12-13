@@ -141,6 +141,70 @@ curl -X POST http://localhost:3456/script/execute-playwright \
   -d '{"code": "await page.click(\"#increment\"); return await page.textContent(\"#counter-value\");"}'
 ```
 
+### Page Management
+
+```bash
+# List all open pages
+curl http://localhost:3456/pages
+
+# Switch to a specific page by index
+curl -X POST http://localhost:3456/pages/switch \
+  -H "Content-Type: application/json" \
+  -d '{"index": 1}'
+
+# Switch to the most recently opened page
+curl -X POST http://localhost:3456/pages/switch-latest
+```
+
+### Activity Recording
+
+The server automatically records browser activity (network requests, console messages, errors, navigation, dialogs). Use these endpoints to monitor what happens between commands.
+
+```bash
+# Get recording status
+curl http://localhost:3456/activity/status
+
+# Poll for new activity since a watermark (KEY ENDPOINT for monitoring)
+# Returns entries with id > since, and a new watermark for next poll
+curl "http://localhost:3456/activity/poll?since=0"
+
+# Quick check if anything happened (lightweight status check)
+curl "http://localhost:3456/activity/check?since=5"
+
+# Get activity log with filters
+curl "http://localhost:3456/activity/log?limit=100"
+curl "http://localhost:3456/activity/log?types=network-request,network-response"
+curl "http://localhost:3456/activity/log?since=10&limit=50"
+
+# Get activity summary
+curl http://localhost:3456/activity/summary
+
+# Start recording (with optional body capture)
+curl -X POST http://localhost:3456/activity/start \
+  -H "Content-Type: application/json" \
+  -d '{"captureNetworkBodies": true}'
+
+# Stop recording
+curl -X POST http://localhost:3456/activity/stop
+
+# Clear activity log
+curl -X DELETE http://localhost:3456/activity/log
+
+# Configure auto-start behavior
+curl -X POST http://localhost:3456/activity/config \
+  -H "Content-Type: application/json" \
+  -d '{"autoStart": false}'
+```
+
+**Activity Types:**
+- `network-request` - Outgoing HTTP requests
+- `network-response` - HTTP responses
+- `network-failed` - Failed requests
+- `console` - Console messages (log, warn, error, etc.)
+- `page-error` - JavaScript errors
+- `navigation` - Page navigation events
+- `dialog` - Alert/confirm/prompt dialogs
+
 ### Script Management (File-based execution)
 
 ```bash

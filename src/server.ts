@@ -210,6 +210,24 @@ app.post('/scroll', asyncHandler(async (req: Request, res: Response) => {
   res.json({ success: true });
 }));
 
+// ============ Page Management Endpoints ============
+
+app.get('/pages', asyncHandler(async (_req: Request, res: Response) => {
+  const pages = await browserManager.listPages();
+  res.json({ success: true, pages });
+}));
+
+app.post('/pages/switch', asyncHandler(async (req: Request, res: Response) => {
+  const { index } = req.body as { index: number };
+  await browserManager.switchToPage(index);
+  res.json({ success: true, message: `Switched to page ${index}` });
+}));
+
+app.post('/pages/switch-latest', asyncHandler(async (_req: Request, res: Response) => {
+  await browserManager.switchToLatestPage();
+  res.json({ success: true, message: 'Switched to latest page' });
+}));
+
 // ============ Activity Recording Endpoints ============
 
 // Start recording (recording is auto-started by default)

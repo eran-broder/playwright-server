@@ -146,4 +146,41 @@ export class BrowserManager {
 
     return asyncFn(page, context, browser) as Promise<T>;
   }
+
+  async listPages(): Promise<{ index: number; url: string; title: string }[]> {
+    if (!this.context) return [];
+    const pages = this.context.pages();
+    const result = [];
+    for (let i = 0; i < pages.length; i++) {
+      result.push({
+        index: i,
+        url: pages[i].url(),
+        title: await pages[i].title(),
+      });
+    }
+    return result;
+  }
+
+  async switchToPage(index: number): Promise<void> {
+    if (!this.context) throw new Error('No browser context');
+    const pages = this.context.pages();
+    if (index < 0 || index >= pages.length) {
+      throw new Error(`Invalid page index: ${index}. Available: 0-${pages.length - 1}`);
+    }
+    this.page = pages[index];
+    if (this.onPageCreated) {
+      this.onPageCreated(this.page);
+    }
+  }
+
+  async switchToLatestPage(): Promise<void> {
+    if (!this.context) throw new Error('No browser context');
+    const pages = this.context.pages();
+    if (pages.length > 0) {
+      this.page = pages[pages.length - 1];
+      if (this.onPageCreated) {
+        this.onPageCreated(this.page);
+      }
+    }
+  }
 }
