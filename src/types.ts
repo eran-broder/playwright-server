@@ -86,6 +86,13 @@ export interface BrowserStatus {
   hasContext: boolean;
   hasPage: boolean;
   currentUrl?: string;
+  extensionPath?: string;
+}
+
+export interface BrowserStartOptions {
+  extensionPath?: string;
+  userDataDir?: string;
+  headless?: boolean;
 }
 
 // ============ API Response Types ============
@@ -299,4 +306,39 @@ export interface RecordingState {
   captureNetworkBodies: boolean;
   entryCount: number;
   watermark: number;
+}
+
+// ============ Interception Types ============
+
+export interface InterceptResponse {
+  status?: number;
+  body?: string;
+  headers?: Record<string, string>;
+  abort?: boolean;
+  proxyUrl?: string; // If set, proxy the request to this URL instead of using body
+}
+
+export interface InterceptRule {
+  id: string;
+  urlPattern: string;
+  method?: string;
+  response: InterceptResponse;
+  delay?: number;
+  enabled: boolean;
+  matchCount: number;
+}
+
+export interface AddInterceptRuleOptions {
+  id?: string;
+  urlPattern: string;
+  method?: string;
+  response: InterceptResponse;
+  delay?: number;
+  enabled?: boolean;
+}
+
+export interface InterceptStatus {
+  enabled: boolean;
+  ruleCount: number;
+  totalMatches: number;
 }

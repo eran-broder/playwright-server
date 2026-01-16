@@ -5,6 +5,7 @@ import { BrowserManager } from './browser-manager';
 import { ActivityRecorder } from './activity-recorder';
 import { ScriptManager } from './script-manager';
 import { ScreenshotManager } from './screenshot-manager';
+import { InterceptManager } from './intercept-manager';
 import type {
   ServerConfig,
   NavigateOptions,
@@ -19,6 +20,8 @@ import type {
   SaveScriptOptions,
   ActivityType,
   ActivityFilter,
+  AddInterceptRuleOptions,
+  BrowserStartOptions,
 } from './types';
 
 // ============ Configuration ============
@@ -35,9 +38,11 @@ const browserManager = new BrowserManager();
 const activityRecorder = new ActivityRecorder();
 const scriptManager = new ScriptManager(config.scriptsDir);
 const screenshotManager = new ScreenshotManager(config.screenshotsDir);
+const interceptManager = new InterceptManager();
 
 browserManager.setOnPageCreated((page) => {
   activityRecorder.attach(page);
+  interceptManager.attach(page);
 });
 
 // ============ Express App ============
@@ -78,9 +83,15 @@ app.get('/status', (_req: Request, res: Response) => {
 
 // ============ Browser Endpoints ============
 
-app.post('/browser/start', asyncHandler(async (_req: Request, res: Response) => {
-  await browserManager.start();
-  res.json({ success: true, message: 'Browser started' });
+app.post('/browser/start', asyncHandler(async (req: Request, res: Response) => {
+  const options = req.body as BrowserStartOptions;
+  await browserManager.start(options);
+  const status = browserManager.getStatus();
+  res.json({
+    success: true,
+    message: 'Browser started',
+    extensionPath: status.extensionPath
+  });
 }));
 
 app.post('/browser/stop', asyncHandler(async (_req: Request, res: Response) => {
@@ -88,9 +99,15 @@ app.post('/browser/stop', asyncHandler(async (_req: Request, res: Response) => {
   res.json({ success: true, message: 'Browser stopped' });
 }));
 
-app.post('/browser/restart', asyncHandler(async (_req: Request, res: Response) => {
-  await browserManager.restart();
-  res.json({ success: true, message: 'Browser restarted' });
+app.post('/browser/restart', asyncHandler(async (req: Request, res: Response) => {
+  const options = req.body as BrowserStartOptions;
+  await browserManager.restart(options);
+  const status = browserManager.getStatus();
+  res.json({
+    success: true,
+    message: 'Browser restarted',
+    extensionPath: status.extensionPath
+  });
 }));
 
 // ============ Navigation Endpoints ============
@@ -228,6 +245,78 @@ app.post('/pages/switch-latest', asyncHandler(async (_req: Request, res: Respons
   res.json({ success: true, message: 'Switched to latest page' });
 }));
 
+// ============ Network Interception Endpoints ============
+
+// Add interception rule
+app.post('/intercept/add', (req: Request, res: Response) => {
+  try {
+    const options = req.body as AddInterceptRuleOptions;
+    const rule = interceptManager.addRule(options);
+    res.json({ success: true, rule });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// List all rules
+app.get('/intercept/list', (_req: Request, res: Response) => {
+  const rules = interceptManager.listRules();
+  res.json({ success: true, rules });
+});
+
+// Remove specific rule
+app.delete('/intercept/remove/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const removed = interceptManager.removeRule(id);
+  if (removed) {
+    res.json({ success: true, message: `Rule '${id}' removed` });
+  } else {
+    res.status(404).json({ success: false, error: `Rule '${id}' not found` });
+  }
+});
+
+// Clear all rules
+app.delete('/intercept/clear', (_req: Request, res: Response) => {
+  const removed = interceptManager.clearRules();
+  res.json({ success: true, removed, message: `Cleared ${removed} rule(s)` });
+});
+
+// Toggle specific rule
+app.post('/intercept/toggle/:id', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { enabled } = req.body as { enabled: boolean };
+    const rule = interceptManager.toggleRule(id, enabled);
+    res.json({ success: true, rule });
+  } catch (error) {
+    res.status(404).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Enable all interception
+app.post('/intercept/enable', (_req: Request, res: Response) => {
+  interceptManager.setEnabled(true);
+  res.json({ success: true, message: 'Interception enabled' });
+});
+
+// Disable all interception
+app.post('/intercept/disable', (_req: Request, res: Response) => {
+  interceptManager.setEnabled(false);
+  res.json({ success: true, message: 'Interception disabled' });
+});
+
+// Get interception status
+app.get('/intercept/status', (_req: Request, res: Response) => {
+  const status = interceptManager.getStatus();
+  res.json({ success: true, ...status });
+});
+
 // ============ Activity Recording Endpoints ============
 
 // Start recording (recording is auto-started by default)
@@ -327,9 +416,9 @@ function printEndpoints(): void {
   console.log('  GET  /status                    - Server status');
   console.log('');
   console.log('Browser:');
-  console.log('  POST /browser/start             - Start browser');
+  console.log('  POST /browser/start             - Start browser {extensionPath?, userDataDir?, headless?}');
   console.log('  POST /browser/stop              - Stop browser');
-  console.log('  POST /browser/restart           - Restart browser');
+  console.log('  POST /browser/restart           - Restart browser {extensionPath?, userDataDir?, headless?}');
   console.log('');
   console.log('Navigation:');
   console.log('  POST /navigate                  - Navigate to URL {url}');
@@ -356,6 +445,16 @@ function printEndpoints(): void {
   console.log('  POST /select                    - Select option {selector, value}');
   console.log('  POST /hover                     - Hover element {selector}');
   console.log('  POST /scroll                    - Scroll page {x?, y?}');
+  console.log('');
+  console.log('Network Interception (mock API responses, block requests):');
+  console.log('  POST /intercept/add             - Add interception rule {urlPattern, response, ...}');
+  console.log('  GET  /intercept/list            - List all rules');
+  console.log('  DEL  /intercept/remove/:id      - Remove specific rule');
+  console.log('  DEL  /intercept/clear           - Clear all rules');
+  console.log('  POST /intercept/toggle/:id      - Enable/disable rule {enabled}');
+  console.log('  POST /intercept/enable          - Enable all interception');
+  console.log('  POST /intercept/disable         - Disable all interception');
+  console.log('  GET  /intercept/status          - Get interception status');
   console.log('');
   console.log('Activity Recording (auto-starts, captures network + console + errors):');
   console.log('  GET  /activity/poll?since=N     - Poll new events since watermark N (KEY ENDPOINT)');

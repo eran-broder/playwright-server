@@ -1,21 +1,65 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
-import type { BrowserStatus } from './types';
+import * as path from 'path';
+import * as os from 'os';
+import type { BrowserStatus, BrowserStartOptions } from './types';
 
 export class BrowserManager {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
   private onPageCreated?: (page: Page) => void;
+  private extensionPath?: string;
+  private userDataDir: string;
+  private isPersistentContext = false;
+
+  constructor() {
+    // Default user data directory
+    this.userDataDir = path.join(os.tmpdir(), 'playwright-server-profile');
+  }
 
   setOnPageCreated(callback: (page: Page) => void): void {
     this.onPageCreated = callback;
   }
 
-  async start(): Promise<void> {
+  async start(options: BrowserStartOptions = {}): Promise<void> {
     await this.stop();
-    this.browser = await chromium.launch({ headless: false });
-    this.context = await this.browser.newContext();
-    this.page = await this.context.newPage();
+
+    const headless = options.headless ?? false;
+    this.extensionPath = options.extensionPath;
+
+    if (options.userDataDir) {
+      this.userDataDir = options.userDataDir;
+    }
+
+    // If extension path is provided, use launchPersistentContext
+    if (this.extensionPath) {
+      const args = [
+        `--disable-extensions-except=${this.extensionPath}`,
+        `--load-extension=${this.extensionPath}`,
+      ];
+
+      this.context = await chromium.launchPersistentContext(this.userDataDir, {
+        headless,
+        args,
+      });
+
+      this.isPersistentContext = true;
+      this.browser = null; // No separate browser object with persistent context
+
+      // Get or create the first page
+      const pages = this.context.pages();
+      if (pages.length > 0) {
+        this.page = pages[0];
+      } else {
+        this.page = await this.context.newPage();
+      }
+    } else {
+      // Standard browser launch without extension
+      this.browser = await chromium.launch({ headless });
+      this.context = await this.browser.newContext();
+      this.page = await this.context.newPage();
+      this.isPersistentContext = false;
+    }
 
     if (this.onPageCreated && this.page) {
       this.onPageCreated(this.page);
@@ -23,16 +67,26 @@ export class BrowserManager {
   }
 
   async stop(): Promise<void> {
-    if (this.browser) {
+    if (this.isPersistentContext && this.context) {
+      // For persistent context, close the context directly
+      await this.context.close();
+    } else if (this.browser) {
+      // For standard browser, close the browser (which closes context and pages)
       await this.browser.close();
     }
     this.browser = null;
     this.context = null;
     this.page = null;
+    this.isPersistentContext = false;
   }
 
-  async restart(): Promise<void> {
-    await this.start();
+  async restart(options?: BrowserStartOptions): Promise<void> {
+    // If no options provided, use the current configuration
+    const startOptions: BrowserStartOptions = options || {
+      extensionPath: this.extensionPath,
+      userDataDir: this.userDataDir,
+    };
+    await this.start(startOptions);
   }
 
   getPage(): Page | null {
@@ -53,10 +107,11 @@ export class BrowserManager {
 
   getStatus(): BrowserStatus {
     return {
-      hasBrowser: this.browser !== null,
+      hasBrowser: this.browser !== null || this.isPersistentContext,
       hasContext: this.context !== null,
       hasPage: this.page !== null,
       currentUrl: this.page?.url(),
+      extensionPath: this.extensionPath,
     };
   }
 

@@ -26,15 +26,44 @@ Server runs on `http://localhost:3456`
 # Check server status
 curl http://localhost:3456/status
 
-# Start browser
+# Start browser (default - no extension)
 curl -X POST http://localhost:3456/browser/start
+
+# Start browser with unpacked Chrome extension
+curl -X POST http://localhost:3456/browser/start \
+  -H "Content-Type: application/json" \
+  -d '{"extensionPath": "/path/to/unpacked/extension"}'
+
+# Start browser with extension and custom user data directory
+curl -X POST http://localhost:3456/browser/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "extensionPath": "/path/to/unpacked/extension",
+    "userDataDir": "/path/to/user/data"
+  }'
 
 # Stop browser
 curl -X POST http://localhost:3456/browser/stop
 
-# Restart browser
+# Restart browser (keeps current configuration)
 curl -X POST http://localhost:3456/browser/restart
+
+# Restart browser with new extension
+curl -X POST http://localhost:3456/browser/restart \
+  -H "Content-Type: application/json" \
+  -d '{"extensionPath": "/path/to/different/extension"}'
 ```
+
+**Browser Start Options:**
+- `extensionPath` (optional): Absolute path to unpacked Chrome extension directory
+- `userDataDir` (optional): Custom user data directory for browser profile
+- `headless` (optional): Run in headless mode (default: false)
+
+**Note on Extensions:**
+- The extension must be an **unpacked** Chrome extension directory (not a .crx file)
+- The extension directory should contain a `manifest.json` file
+- When an extension is loaded, the browser uses a persistent context to maintain extension state
+- The extension will be automatically loaded on browser start/restart
 
 ### Navigation
 
@@ -155,6 +184,104 @@ curl -X POST http://localhost:3456/pages/switch \
 # Switch to the most recently opened page
 curl -X POST http://localhost:3456/pages/switch-latest
 ```
+
+### Network Interception
+
+Intercept and mock network requests by URL pattern. Useful for testing error states, simulating slow networks, or providing fake API responses.
+
+```bash
+# Add interception rule
+curl -X POST http://localhost:3456/intercept/add \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "mock-users-api",
+    "urlPattern": ".*\\/api\\/users.*",
+    "method": "GET",
+    "response": {
+      "status": 200,
+      "body": "{\"users\": [{\"id\": 1, \"name\": \"John\"}]}",
+      "headers": {
+        "content-type": "application/json"
+      }
+    }
+  }'
+
+# Mock a 404 error
+curl -X POST http://localhost:3456/intercept/add \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "user-not-found",
+    "urlPattern": ".*\\/api\\/user\\/123",
+    "response": {
+      "status": 404,
+      "body": "{\"error\": \"User not found\"}"
+    }
+  }'
+
+# Simulate slow API (3 second delay)
+curl -X POST http://localhost:3456/intercept/add \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "slow-api",
+    "urlPattern": ".*\\/api\\/.*",
+    "delay": 3000,
+    "response": {
+      "status": 200,
+      "body": "{\"data\": \"slow response\"}"
+    }
+  }'
+
+# Block requests (simulate network failure)
+curl -X POST http://localhost:3456/intercept/add \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "block-analytics",
+    "urlPattern": ".*google-analytics\\.com.*",
+    "response": {
+      "abort": true
+    }
+  }'
+
+# List all rules (shows match counts)
+curl http://localhost:3456/intercept/list
+
+# Get interception status
+curl http://localhost:3456/intercept/status
+
+# Disable a specific rule
+curl -X POST http://localhost:3456/intercept/toggle/mock-users-api \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}'
+
+# Enable a specific rule
+curl -X POST http://localhost:3456/intercept/toggle/mock-users-api \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}'
+
+# Remove a specific rule
+curl -X DELETE http://localhost:3456/intercept/remove/mock-users-api
+
+# Clear all rules
+curl -X DELETE http://localhost:3456/intercept/clear
+
+# Temporarily disable all interception (keeps rules)
+curl -X POST http://localhost:3456/intercept/disable
+
+# Re-enable all interception
+curl -X POST http://localhost:3456/intercept/enable
+```
+
+**Rule Fields:**
+- `id` (optional): Unique identifier, auto-generated if not provided
+- `urlPattern` (required): Regular expression to match URLs
+- `method` (optional): HTTP method (GET, POST, etc.). Omit to match all methods
+- `response` (required): Response configuration
+  - `status`: HTTP status code (default: 200)
+  - `body`: Response body as string
+  - `headers`: Custom response headers
+  - `abort`: Set to `true` to abort the request instead of fulfilling
+- `delay` (optional): Delay in milliseconds before responding
+- `enabled` (optional): Enable/disable rule (default: true)
 
 ### Activity Recording
 
