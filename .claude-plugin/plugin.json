@@ -1,0 +1,11 @@
+{
+  "name": "playwright-server",
+  "version": "1.0.0",
+  "description": "Browser automation via a local Playwright HTTP server. Navigate, click, type, screenshot, monitor network activity, and execute Playwright code - all through simple curl commands.",
+  "author": {
+    "name": "Eran"
+  },
+  "repository": "",
+  "license": "MIT",
+  "keywords": ["playwright", "browser", "automation", "web", "scraping", "testing"]
+}

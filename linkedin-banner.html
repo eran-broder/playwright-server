@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Playwright Server</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 1200px;
+    height: 628px;
+    background: #0a0a0f;
+    font-family: 'Inter', sans-serif;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Subtle grid background */
+  body::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Glow blobs */
+  .glow-1 {
+    position: absolute;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(239,68,68,0.12) 0%, transparent 70%);
+    top: -100px;
+    left: -50px;
+    filter: blur(40px);
+  }
+  .glow-2 {
+    position: absolute;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(59,130,246,0.10) 0%, transparent 70%);
+    bottom: -150px;
+    right: -100px;
+    filter: blur(40px);
+  }
+  .glow-3 {
+    position: absolute;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    filter: blur(60px);
+  }
+
+  .wrapper {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    justify-content: center;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+
+  .header h1 {
+    font-family: 'Inter', sans-serif;
+    font-size: 42px;
+    font-weight: 900;
+    color: #ffffff;
+    letter-spacing: -1px;
+  }
+
+  .header h1 .alt {
+    color: #10b981;
+  }
+
+  .container {
+    display: flex;
+    padding: 0 56px;
+    gap: 44px;
+  }
+
+  /* LEFT SIDE - The "old way" */
+  .side-old {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .side-old .label {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2.5px;
+    color: #ef4444;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .side-old .label::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: #ef4444;
+    border-radius: 50%;
+    box-shadow: 0 0 12px rgba(239,68,68,0.6);
+  }
+
+  .tool-calls {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .tool-call {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 36px;
+  }
+
+  .tool-pill {
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.2);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: #fca5a5;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .arrow-wait {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: rgba(255,255,255,0.2);
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .arrow-wait .dots {
+    letter-spacing: 2px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.7; }
+  }
+
+  .arrow-wait svg {
+    width: 16px;
+    height: 16px;
+    opacity: 0.3;
+  }
+
+  .roundtrip-count {
+    margin-top: 24px;
+    font-family: 'JetBrains Mono', monospace;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  .roundtrip-count .num {
+    font-size: 72px;
+    font-weight: 900;
+    color: #ef4444;
+    line-height: 1;
+    text-shadow: 0 0 40px rgba(239,68,68,0.4);
+  }
+
+  .roundtrip-count .unit {
+    font-size: 18px;
+    font-weight: 600;
+    color: rgba(239,68,68,0.6);
+    line-height: 1.3;
+  }
+
+  /* DIVIDER */
+  .divider {
+    width: 1px;
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      rgba(255,255,255,0.08) 20%,
+      rgba(255,255,255,0.08) 80%,
+      transparent
+    );
+    position: relative;
+  }
+
+  .vs-badge {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #0a0a0f;
+    border: 2px solid rgba(250,204,21,0.3);
+    border-radius: 50%;
+    width: 56px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 900;
+    color: #facc15;
+    letter-spacing: 1px;
+    text-shadow: 0 0 20px rgba(250,204,21,0.4);
+    box-shadow: 0 0 24px rgba(250,204,21,0.1);
+  }
+
+  /* RIGHT SIDE - The "new way" */
+  .side-new {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .side-new .label {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2.5px;
+    color: #10b981;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .side-new .label::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: #10b981;
+    border-radius: 50%;
+    box-shadow: 0 0 12px rgba(16,185,129,0.6);
+  }
+
+  .code-block {
+    background: rgba(16,185,129,0.04);
+    border: 1px solid rgba(16,185,129,0.15);
+    border-radius: 12px;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(16,185,129,0.1);
+  }
+
+  .code-header .endpoint {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #6ee7b7;
+    background: rgba(16,185,129,0.1);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .code-header .one-call {
+    font-size: 11px;
+    color: rgba(16,185,129,0.5);
+    margin-left: auto;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .code-lines {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.9;
+    flex: 1;
+  }
+
+  .code-lines .kw { color: #c084fc; }
+  .code-lines .fn { color: #60a5fa; }
+  .code-lines .str { color: #fbbf24; }
+  .code-lines .cm { color: rgba(255,255,255,0.2); font-style: italic; }
+  .code-lines .pr { color: #6ee7b7; }
+  .code-lines .op { color: rgba(255,255,255,0.5); }
+  .code-lines .default { color: rgba(255,255,255,0.7); }
+
+  .roundtrip-count-good {
+    margin-top: 24px;
+    font-family: 'JetBrains Mono', monospace;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  .roundtrip-count-good .num {
+    font-size: 72px;
+    font-weight: 900;
+    color: #10b981;
+    line-height: 1;
+    text-shadow: 0 0 40px rgba(16,185,129,0.4);
+  }
+
+  .roundtrip-count-good .unit {
+    font-size: 18px;
+    font-weight: 600;
+    color: rgba(16,185,129,0.6);
+    line-height: 1.3;
+  }
+
+</style>
+</head>
+<body>
+
+<div class="glow-1"></div>
+<div class="glow-2"></div>
+<div class="glow-3"></div>
+
+<div class="wrapper">
+
+<div class="header">
+  <h1>Playwright MCP <span class="alt">Alternative</span></h1>
+</div>
+
+<div class="container">
+
+  <!-- LEFT: MCP / Multi-tool approach -->
+  <div class="side-old">
+    <div class="label">Typical AI Browser Agent</div>
+
+    <div class="tool-calls">
+      <div class="tool-call">
+        <div class="tool-pill">tool: click("#login")</div>
+        <div class="arrow-wait">
+          <span class="dots">...</span> wait <span class="dots">...</span> response
+        </div>
+      </div>
+      <div class="tool-call">
+        <div class="tool-pill">tool: type("#email", "e@x.co")</div>
+        <div class="arrow-wait">
+          <span class="dots">...</span> wait <span class="dots">...</span> response
+        </div>
+      </div>
+      <div class="tool-call">
+        <div class="tool-pill">tool: type("#pass", "****")</div>
+        <div class="arrow-wait">
+          <span class="dots">...</span> wait <span class="dots">...</span> response
+        </div>
+      </div>
+      <div class="tool-call">
+        <div class="tool-pill">tool: click("#submit")</div>
+        <div class="arrow-wait">
+          <span class="dots">...</span> wait <span class="dots">...</span> response
+        </div>
+      </div>
+      <div class="tool-call">
+        <div class="tool-pill">tool: wait(".dashboard")</div>
+        <div class="arrow-wait">
+          <span class="dots">...</span> wait <span class="dots">...</span> response
+        </div>
+      </div>
+      <div class="tool-call">
+        <div class="tool-pill">tool: screenshot()</div>
+        <div class="arrow-wait">
+          <span class="dots">...</span> wait <span class="dots">...</span> response
+        </div>
+      </div>
+    </div>
+
+    <div class="roundtrip-count">
+      <span class="num">6</span>
+      <span class="unit">round-trips<br>tool calls</span>
+    </div>
+  </div>
+
+  <!-- DIVIDER -->
+  <div class="divider">
+    <div class="vs-badge">VS</div>
+  </div>
+
+  <!-- RIGHT: Playwright Server approach -->
+  <div class="side-new">
+    <div class="label">Playwright Server</div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <div class="endpoint">POST /script/execute-playwright</div>
+        <div class="one-call">single call</div>
+      </div>
+      <div class="code-lines">
+        <div><span class="kw">await</span> <span class="default">page.</span><span class="fn">click</span><span class="op">(</span><span class="str">"#login"</span><span class="op">)</span></div>
+        <div><span class="kw">await</span> <span class="default">page.</span><span class="fn">fill</span><span class="op">(</span><span class="str">"#email"</span><span class="op">,</span> <span class="str">"e@x.co"</span><span class="op">)</span></div>
+        <div><span class="kw">await</span> <span class="default">page.</span><span class="fn">fill</span><span class="op">(</span><span class="str">"#pass"</span><span class="op">,</span> <span class="str">"****"</span><span class="op">)</span></div>
+        <div><span class="kw">await</span> <span class="default">page.</span><span class="fn">click</span><span class="op">(</span><span class="str">"#submit"</span><span class="op">)</span></div>
+        <div><span class="kw">await</span> <span class="default">page.</span><span class="fn">waitForSelector</span><span class="op">(</span><span class="str">".dashboard"</span><span class="op">)</span></div>
+        <div><span class="kw">return await</span> <span class="default">page.</span><span class="fn">screenshot</span><span class="op">()</span></div>
+      </div>
+    </div>
+
+    <div class="roundtrip-count-good">
+      <span class="num">1</span>
+      <span class="unit">round-trip<br>tool call</span>
+    </div>
+  </div>
+
+</div>
+
+</div>
+
+</body>
+</html>

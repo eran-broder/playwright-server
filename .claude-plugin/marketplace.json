@@ -1,0 +1,12 @@
+{
+  "name": "Playwright Server",
+  "description": "Browser automation via a local Playwright HTTP server",
+  "plugins": [
+    {
+      "name": "playwright-server",
+      "description": "Control a real Chromium browser via simple curl commands. Navigate, click, type, screenshot, monitor network activity, and execute Playwright code.",
+      "version": "1.0.0",
+      "source": "."
+    }
+  ]
+}
