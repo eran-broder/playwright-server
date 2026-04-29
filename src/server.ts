@@ -25,8 +25,8 @@ import type {
 
 const config: ServerConfig = {
   port: parseInt(process.env.PORT || '3456'),
-  scriptsDir: path.join(__dirname, '..', 'scripts'),
-  screenshotsDir: path.join(__dirname, '..', 'screenshots'),
+  scriptsDir: process.env.SCRIPTS_DIR || path.join(process.cwd(), 'scripts'),
+  screenshotsDir: process.env.SCREENSHOTS_DIR || path.join(process.cwd(), 'screenshots'),
 };
 
 // ============ Initialize Services ============
@@ -78,9 +78,10 @@ app.get('/status', (_req: Request, res: Response) => {
 
 // ============ Browser Endpoints ============
 
-app.post('/browser/start', asyncHandler(async (_req: Request, res: Response) => {
-  await browserManager.start();
-  res.json({ success: true, message: 'Browser started' });
+app.post('/browser/start', asyncHandler(async (req: Request, res: Response) => {
+  const device = typeof req.body?.device === 'string' ? req.body.device : undefined;
+  await browserManager.start({ device });
+  res.json({ success: true, message: 'Browser started', device: device ?? null });
 }));
 
 app.post('/browser/stop', asyncHandler(async (_req: Request, res: Response) => {
@@ -88,9 +89,10 @@ app.post('/browser/stop', asyncHandler(async (_req: Request, res: Response) => {
   res.json({ success: true, message: 'Browser stopped' });
 }));
 
-app.post('/browser/restart', asyncHandler(async (_req: Request, res: Response) => {
-  await browserManager.restart();
-  res.json({ success: true, message: 'Browser restarted' });
+app.post('/browser/restart', asyncHandler(async (req: Request, res: Response) => {
+  const device = typeof req.body?.device === 'string' ? req.body.device : undefined;
+  await browserManager.restart({ device });
+  res.json({ success: true, message: 'Browser restarted', device: device ?? null });
 }));
 
 // ============ Navigation Endpoints ============
@@ -378,8 +380,10 @@ function printEndpoints(): void {
 }
 
 async function main(): Promise<void> {
-  app.listen(config.port, async () => {
-    console.log(`Playwright Server running on http://localhost:${config.port}`);
+  const server = app.listen(config.port, async () => {
+    const addr = server.address();
+    const actualPort = typeof addr === 'object' && addr ? addr.port : config.port;
+    console.log(`Playwright Server running on http://localhost:${actualPort}`);
     console.log('');
     printEndpoints();
     await browserManager.start();

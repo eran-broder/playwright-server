@@ -1,12 +1,50 @@
 {
-  "name": "playwright-server",
-  "version": "1.0.0",
-  "description": "Local webserver for instrumenting Playwright via API",
+  "name": "playwright-http-server",
+  "version": "1.1.0",
+  "description": "Local HTTP server that gives AI agents full browser control via REST API. Built on Playwright.",
   "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "bin": {
+    "playwright-http-server": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    ".claude-plugin",
+    "README.md",
+    "README-AI-AGENT.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
-    "dev": "ts-node src/server.ts"
+    "dev": "ts-node src/server.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "playwright",
+    "browser",
+    "automation",
+    "rest",
+    "http",
+    "server",
+    "ai",
+    "agent",
+    "claude",
+    "llm"
+  ],
+  "author": "Eran Broder <eran@digitalenzymes.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eran-broder/playwright-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eran-broder/playwright-server/issues"
+  },
+  "homepage": "https://github.com/eran-broder/playwright-server#readme",
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "express": "^4.18.2",

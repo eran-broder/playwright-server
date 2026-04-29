@@ -1,31 +1,48 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import { chromium, devices, Browser, BrowserContext, Page } from 'playwright';
 import type { BrowserStatus } from './types';
+
+export interface StartOptions {
+  /** Playwright device name for emulation, e.g. "iPhone 14", "Pixel 7", "iPad Mini".
+   *  Sets touch + mobile UA + viewport + DPR atomically. */
+  device?: string;
+}
 
 export class BrowserManager {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
   private onPageCreated?: (page: Page) => void;
+  private currentDevice: string | null = null;
 
   setOnPageCreated(callback: (page: Page) => void): void {
     this.onPageCreated = callback;
   }
 
-  async start(): Promise<void> {
+  async start(opts: StartOptions = {}): Promise<void> {
     await this.stop();
     this.browser = await chromium.launch({ headless: false });
-    
-    const authPath = path.join(__dirname, '..', 'auth.json');
+
+    let deviceConfig: Parameters<Browser['newContext']>[0] = {};
+    if (opts.device) {
+      const d = devices[opts.device];
+      if (!d) throw new Error(`Unknown device: ${opts.device}. Try "iPhone 14", "Pixel 7", etc.`);
+      deviceConfig = { ...d };
+      this.currentDevice = opts.device;
+    } else {
+      this.currentDevice = null;
+    }
+
+    const authPath = process.env.AUTH_PATH || path.join(process.cwd(), 'auth.json');
     if (fs.existsSync(authPath)) {
         console.log('Loading auth state from ' + authPath);
         const state = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
-        this.context = await this.browser.newContext({ storageState: state });
+        this.context = await this.browser.newContext({ ...deviceConfig, storageState: state });
     } else {
-        this.context = await this.browser.newContext();
+        this.context = await this.browser.newContext(deviceConfig);
     }
-    
+
     this.page = await this.context.newPage();
 
     if (this.onPageCreated && this.page) {
@@ -40,10 +57,15 @@ export class BrowserManager {
     this.browser = null;
     this.context = null;
     this.page = null;
+    this.currentDevice = null;
   }
 
-  async restart(): Promise<void> {
-    await this.start();
+  async restart(opts: StartOptions = {}): Promise<void> {
+    await this.start(opts);
+  }
+
+  getCurrentDevice(): string | null {
+    return this.currentDevice;
   }
 
   getPage(): Page | null {
