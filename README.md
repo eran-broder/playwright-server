@@ -1,6 +1,41 @@
-# Playwright Server
+# playwright-http-server
 
 A local HTTP server that gives AI agents (and humans) full browser control via simple curl commands. Built on Playwright, it exposes navigation, interaction, screenshots, accessibility snapshots, activity monitoring, and raw Playwright code execution through a clean REST API.
+
+## Install (npm)
+
+```bash
+npm install -g playwright-http-server
+npx playwright install chromium    # one-time, downloads Chromium
+```
+
+Then run:
+
+```bash
+playwright-http-server                          # listens on :3456 in CWD
+playwright-http-server --port 3457 --dir ./b    # custom port + working dir
+playwright-http-server --ephemeral              # auto-picks free port + tempdir
+```
+
+### CLI flags
+
+| Flag | Description |
+|------|-------------|
+| `--port <n>` | Port to listen on. Use `0` to let the OS pick a free port. Default `3456` (or `$PORT`). |
+| `--dir <path>` | Working directory for `screenshots/`, `scripts/`, `auth.json`. Default: current directory. |
+| `--ephemeral` | Spawn an isolated session: fresh tempdir + auto-picked port. Prints both on startup. |
+| `-h, --help` | Show help. |
+
+### Running multiple isolated sessions
+
+Each process is fully self-contained — its own Chromium, its own activity log, its own files. Run as many as you want; just give them different ports and folders (or use `--ephemeral` to do it for you):
+
+```bash
+playwright-http-server --ephemeral &   # session A, picks port + tempdir
+playwright-http-server --ephemeral &   # session B, fully independent
+```
+
+Override paths individually with env vars: `PORT`, `SCREENSHOTS_DIR`, `SCRIPTS_DIR`, `AUTH_PATH`.
 
 ## Claude Code Plugin
 
@@ -13,20 +48,15 @@ Install as a Claude Code plugin to give Claude browser automation capabilities:
 
 Then use the `/playwright-server:browse` skill or just ask Claude to browse - it will auto-detect when to use it.
 
-## Setup
+## Develop locally
 
 ```bash
+git clone https://github.com/eran-broder/playwright-server
+cd playwright-server
 npm install
 npx playwright install chromium
-```
-
-## Run
-
-```bash
 npm run dev
 ```
-
-Server runs on `http://localhost:3456` (configurable via `PORT` env var).
 
 ## API Overview
 
