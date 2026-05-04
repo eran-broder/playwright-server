@@ -8,7 +8,6 @@ const { values } = parseArgs({
   options: {
     port: { type: 'string' },
     dir: { type: 'string' },
-    ephemeral: { type: 'boolean' },
     help: { type: 'boolean', short: 'h' },
   },
   allowPositionals: false,
@@ -17,37 +16,29 @@ const { values } = parseArgs({
 if (values.help) {
   console.log(`Usage: playwright-http-server [options]
 
+Every invocation spawns a fresh isolated session: a new tempdir for
+screenshots/scripts/auth, and an OS-picked free port. Both are printed
+on startup. Run it as many times as you want — sessions never interfere.
+
 Options:
-  --port <n>     Port to listen on. Use 0 to let the OS pick a free port.
-                 (default: 3456, or env PORT)
-  --dir <path>   Working directory for screenshots/, scripts/, auth.json.
-                 (default: current directory)
-  --ephemeral    Spawn an isolated session: fresh tempdir + auto-picked port.
-                 Prints both on startup.
+  --port <n>     Override the auto-picked port. Use 0 to keep auto-pick.
+  --dir <path>   Override the auto-created tempdir.
   -h, --help     Show this help.
 
 Examples:
-  playwright-http-server
-  playwright-http-server --port 3457 --dir ./sessionB
-  playwright-http-server --ephemeral`);
+  playwright-http-server                       # fresh port + tempdir
+  playwright-http-server --port 3456           # fixed port, fresh tempdir
+  playwright-http-server --dir ./mySession     # fixed dir, fresh port`);
   process.exit(0);
 }
 
-let workdir = values.dir;
-let port = values.port;
+const workdir = values.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-http-'));
+const port = values.port ?? '0';
 
-if (values.ephemeral) {
-  workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-http-'));
-  port = '0';
-  console.log(`[ephemeral] workdir: ${workdir}`);
-}
+fs.mkdirSync(workdir, { recursive: true });
+process.chdir(workdir);
+process.env.PORT = port;
 
-if (workdir) {
-  fs.mkdirSync(workdir, { recursive: true });
-  process.chdir(workdir);
-}
-if (port !== undefined) {
-  process.env.PORT = port;
-}
+console.log(`[session] workdir: ${workdir}`);
 
 import './server';

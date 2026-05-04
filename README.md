@@ -9,33 +9,35 @@ npm install -g playwright-http-server
 npx playwright install chromium    # one-time, downloads Chromium
 ```
 
-Then run:
+## Run
 
 ```bash
-playwright-http-server                          # listens on :3456 in CWD
-playwright-http-server --port 3457 --dir ./b    # custom port + working dir
-playwright-http-server --ephemeral              # auto-picks free port + tempdir
+playwright-http-server
 ```
 
-### CLI flags
+That's it. Every invocation spawns a fresh isolated session — a new tempdir for screenshots/scripts/auth and an OS-picked free port. Both are printed on startup:
+
+```
+[session] workdir: /tmp/playwright-http-aB3xK1
+Playwright Server running on http://localhost:62058
+```
+
+Run it as many times as you want; sessions never interfere with each other.
+
+### Optional overrides
 
 | Flag | Description |
 |------|-------------|
-| `--port <n>` | Port to listen on. Use `0` to let the OS pick a free port. Default `3456` (or `$PORT`). |
-| `--dir <path>` | Working directory for `screenshots/`, `scripts/`, `auth.json`. Default: current directory. |
-| `--ephemeral` | Spawn an isolated session: fresh tempdir + auto-picked port. Prints both on startup. |
+| `--port <n>` | Pin a specific port instead of auto-picking. |
+| `--dir <path>` | Pin a specific working directory instead of a fresh tempdir. |
 | `-h, --help` | Show help. |
 
-### Running multiple isolated sessions
-
-Each process is fully self-contained — its own Chromium, its own activity log, its own files. Run as many as you want; just give them different ports and folders (or use `--ephemeral` to do it for you):
-
 ```bash
-playwright-http-server --ephemeral &   # session A, picks port + tempdir
-playwright-http-server --ephemeral &   # session B, fully independent
+playwright-http-server --port 3456           # fixed port, fresh tempdir
+playwright-http-server --dir ./mySession     # fixed dir, fresh port
 ```
 
-Override paths individually with env vars: `PORT`, `SCREENSHOTS_DIR`, `SCRIPTS_DIR`, `AUTH_PATH`.
+Env vars also work: `PORT`, `SCREENSHOTS_DIR`, `SCRIPTS_DIR`, `AUTH_PATH`.
 
 ## Claude Code Plugin
 
@@ -72,6 +74,8 @@ npm run dev
 | **Activity** | `GET /activity/poll\|check\|log\|summary` | Network, console, error monitoring |
 | **Pages** | `GET /pages`, `POST /pages/switch\|switch-latest` | Multi-tab management |
 
+> In the examples below, `$PORT` is the port printed by the server on startup. Either export it (`export PORT=62058`) or substitute the actual number.
+
 ## Key Features
 
 ### Accessibility Snapshots
@@ -79,8 +83,8 @@ npm run dev
 Get a structured YAML accessibility tree - 2-5KB vs 50-500KB for raw HTML:
 
 ```bash
-curl http://localhost:3456/snapshot
-curl "http://localhost:3456/snapshot?selector=nav"
+curl http://localhost:$PORT/snapshot
+curl "http://localhost:$PORT/snapshot?selector=nav"
 ```
 
 ```yaml
@@ -96,10 +100,10 @@ All browser events (network, console, errors, navigation, dialogs) are captured 
 
 ```bash
 # Get everything + initial watermark
-curl "http://localhost:3456/activity/poll?since=0"
+curl "http://localhost:$PORT/activity/poll?since=0"
 
 # After performing actions, get only new events
-curl "http://localhost:3456/activity/poll?since=150"
+curl "http://localhost:$PORT/activity/poll?since=150"
 ```
 
 ### Playwright Code Execution
@@ -107,7 +111,7 @@ curl "http://localhost:3456/activity/poll?since=150"
 Full access to Playwright's `page`, `context`, and `browser` objects - anything Playwright can do, this server can do:
 
 ```bash
-curl -X POST http://localhost:3456/script/execute-playwright \
+curl -X POST http://localhost:$PORT/script/execute-playwright \
   -H "Content-Type: application/json" \
   -d '{"code": "await page.waitForSelector(\".loaded\"); return await page.title();"}'
 ```
@@ -120,23 +124,23 @@ Drop an `auth.json` file in the project root (Playwright storage state format) a
 
 ```bash
 # Navigate
-curl -X POST http://localhost:3456/navigate \
+curl -X POST http://localhost:$PORT/navigate \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com"}'
 
 # See what's on the page
-curl http://localhost:3456/snapshot
+curl http://localhost:$PORT/snapshot
 
 # Click something
-curl -X POST http://localhost:3456/click \
+curl -X POST http://localhost:$PORT/click \
   -H "Content-Type: application/json" \
   -d '{"selector": "a"}'
 
 # Check what happened (network, errors, console)
-curl "http://localhost:3456/activity/poll?since=0"
+curl "http://localhost:$PORT/activity/poll?since=0"
 
 # Take a screenshot
-curl -X POST http://localhost:3456/screenshot \
+curl -X POST http://localhost:$PORT/screenshot \
   -H "Content-Type: application/json" \
   -d '{"name": "after-click"}'
 ```

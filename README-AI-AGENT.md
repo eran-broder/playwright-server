@@ -5,14 +5,14 @@ A local HTTP API for browser automation via Playwright. Designed for AI agents t
 ## Quick Start
 
 ```bash
-# Start server (default port 3456)
-npm run dev
+# Via the published npm CLI (every run gets a fresh port + tempdir):
+playwright-http-server
 
-# Or with custom port
-PORT=8080 npm run dev
+# Or for local development (uses port 3456 by default):
+npm run dev
 ```
 
-Server runs at `http://localhost:3456`
+The server prints its port on startup. The examples below use `localhost:3456`; replace with whatever port the server printed (or pin one via `--port 3456` / `PORT=3456`).
 
 ---
 
