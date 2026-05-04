@@ -1,8 +1,8 @@
 # playwright-http-server
 
-A local HTTP server that gives AI agents (and humans) full browser control via simple curl commands. Built on Playwright, it exposes navigation, interaction, screenshots, accessibility snapshots, activity monitoring, and raw Playwright code execution through a clean REST API.
+A local HTTP server that exposes Playwright browser automation as a REST API. Drive a real Chromium browser via curl: navigate, click, type, screenshot, monitor network activity, execute JavaScript, run arbitrary Playwright code.
 
-## Install (npm)
+## Install
 
 ```bash
 npm install -g playwright-http-server
@@ -15,14 +15,14 @@ npx playwright install chromium    # one-time, downloads Chromium
 playwright-http-server
 ```
 
-That's it. Every invocation spawns a fresh isolated session — a new tempdir for screenshots/scripts/auth and an OS-picked free port. Both are printed on startup:
+Every invocation spawns an isolated session — a fresh tempdir for screenshots/scripts/auth and an OS-picked free port. Both are printed on startup:
 
 ```
 [session] workdir: /tmp/playwright-http-aB3xK1
 Playwright Server running on http://localhost:62058
 ```
 
-Run it as many times as you want; sessions never interfere with each other.
+Run as many concurrent instances as you want; sessions never collide.
 
 ### Optional overrides
 
@@ -39,48 +39,28 @@ playwright-http-server --dir ./mySession     # fixed dir, fresh port
 
 Env vars also work: `PORT`, `SCREENSHOTS_DIR`, `SCRIPTS_DIR`, `AUTH_PATH`.
 
-## Claude Code Plugin
+## API
 
-Install as a Claude Code plugin to give Claude browser automation capabilities:
+In the examples below, `$PORT` is the port the server printed at startup. Either `export PORT=62058` or substitute the actual number.
 
-```
-/plugin marketplace add eran-broder/playwright-server
-/plugin install playwright-server@eran-broder-playwright-server
-```
-
-Then use the `/playwright-server:browse` skill or just ask Claude to browse - it will auto-detect when to use it.
-
-## Develop locally
-
-```bash
-git clone https://github.com/eran-broder/playwright-server
-cd playwright-server
-npm install
-npx playwright install chromium
-npm run dev
-```
-
-## API Overview
+### Endpoint summary
 
 | Category | Endpoints | Description |
 |----------|-----------|-------------|
-| **Browser** | `POST /browser/start\|stop\|restart` | Lifecycle management |
-| **Navigation** | `POST /navigate`, `GET /url\|title` | Go to URLs, get current state |
-| **Snapshot** | `GET /snapshot` | Accessibility tree as YAML (lightweight page understanding) |
-| **Interaction** | `POST /click\|type\|hover\|select\|keyboard\|scroll\|wait` | Page interactions |
-| **Screenshots** | `POST /screenshot`, `GET /screenshots` | Capture and list screenshots |
-| **Content** | `GET /content` | Full page HTML |
-| **Code Exec** | `POST /execute/inline`, `POST /script/execute-playwright` | Run JS or Playwright code |
-| **Activity** | `GET /activity/poll\|check\|log\|summary` | Network, console, error monitoring |
-| **Pages** | `GET /pages`, `POST /pages/switch\|switch-latest` | Multi-tab management |
+| Status | `GET /status` | Server + browser state |
+| Browser | `POST /browser/start\|stop\|restart` | Lifecycle. `start` accepts `{ device }` for emulation (e.g. `iPhone 14`, `Pixel 7`). |
+| Navigation | `POST /navigate`, `GET /url\|title` | Go to URLs, read current state |
+| Snapshot | `GET /snapshot` | Accessibility tree as YAML |
+| Interaction | `POST /click\|type\|hover\|select\|keyboard\|scroll\|wait` | Page interactions |
+| Screenshots | `POST /screenshot`, `GET /screenshots`, `GET /screenshot/:name` | Capture, list, fetch |
+| Content | `GET /content` | Full page HTML |
+| Code execution | `POST /execute/inline`, `POST /script/execute-playwright`, `POST /script/save\|execute` | Run JS or Playwright code |
+| Activity | `GET /activity/poll\|check\|log\|summary\|status`, `POST /activity/start\|stop\|config`, `DELETE /activity/log` | Network, console, error monitoring |
+| Pages | `GET /pages`, `POST /pages/switch\|switch-latest` | Multi-tab management |
 
-> In the examples below, `$PORT` is the port printed by the server on startup. Either export it (`export PORT=62058`) or substitute the actual number.
+### Accessibility snapshot
 
-## Key Features
-
-### Accessibility Snapshots
-
-Get a structured YAML accessibility tree - 2-5KB vs 50-500KB for raw HTML:
+Structured YAML accessibility tree — 2–5 KB vs 50–500 KB for raw HTML:
 
 ```bash
 curl http://localhost:$PORT/snapshot
@@ -94,21 +74,23 @@ curl "http://localhost:$PORT/snapshot?selector=nav"
 - button "Sign In"
 ```
 
-### Activity Recording
+### Activity recording
 
-All browser events (network, console, errors, navigation, dialogs) are captured with incrementing IDs. Poll efficiently with watermarks:
+All browser events (network requests/responses, console, page errors, navigation, dialogs) are captured with incrementing integer IDs. Poll using a watermark:
 
 ```bash
-# Get everything + initial watermark
+# Initial fetch + watermark
 curl "http://localhost:$PORT/activity/poll?since=0"
 
-# After performing actions, get only new events
+# After performing actions, fetch only new events
 curl "http://localhost:$PORT/activity/poll?since=150"
 ```
 
-### Playwright Code Execution
+Recording auto-starts on browser launch. Stop with `POST /activity/stop`, clear with `DELETE /activity/log`.
 
-Full access to Playwright's `page`, `context`, and `browser` objects - anything Playwright can do, this server can do:
+### Arbitrary Playwright code
+
+Direct access to Playwright's `page`, `context`, and `browser` objects — anything Playwright can do, this endpoint can do:
 
 ```bash
 curl -X POST http://localhost:$PORT/script/execute-playwright \
@@ -116,11 +98,35 @@ curl -X POST http://localhost:$PORT/script/execute-playwright \
   -d '{"code": "await page.waitForSelector(\".loaded\"); return await page.title();"}'
 ```
 
-### Auth State Persistence
+### Inline JavaScript on the page
 
-Drop an `auth.json` file in the project root (Playwright storage state format) and it auto-loads on browser start, restoring cookies and localStorage.
+For code that runs *inside* the page (no Playwright API access):
 
-## Quick Example
+```bash
+curl -X POST http://localhost:$PORT/execute/inline \
+  -H "Content-Type: application/json" \
+  -d '{"code": "return document.querySelectorAll(\"a\").length"}'
+```
+
+### Auth state persistence
+
+Drop an `auth.json` file (Playwright storage state format) in the working directory and it auto-loads on browser start, restoring cookies and localStorage.
+
+To capture state from a session: `await context.storageState({ path: 'auth.json' })`.
+
+### Device emulation
+
+Start the browser with a Playwright device profile:
+
+```bash
+curl -X POST http://localhost:$PORT/browser/start \
+  -H "Content-Type: application/json" \
+  -d '{"device": "iPhone 14"}'
+```
+
+Sets viewport, user agent, touch, and DPR atomically. Common values: `iPhone 14`, `Pixel 7`, `iPad Mini`, `Desktop Chrome`.
+
+## End-to-end example
 
 ```bash
 # Navigate
@@ -128,45 +134,35 @@ curl -X POST http://localhost:$PORT/navigate \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com"}'
 
-# See what's on the page
+# Inspect the page structure
 curl http://localhost:$PORT/snapshot
 
-# Click something
+# Interact
 curl -X POST http://localhost:$PORT/click \
   -H "Content-Type: application/json" \
   -d '{"selector": "a"}'
 
-# Check what happened (network, errors, console)
+# Inspect what happened (network, console, errors)
 curl "http://localhost:$PORT/activity/poll?since=0"
 
-# Take a screenshot
+# Capture
 curl -X POST http://localhost:$PORT/screenshot \
   -H "Content-Type: application/json" \
   -d '{"name": "after-click"}'
 ```
 
-## Documentation
+## Develop locally
 
-- **[AI Agent Guide](README-AI-AGENT.md)** - Complete API reference with response shapes, activity types, workflows, and best practices
-- **[Skill Instructions](skills/browse/SKILL.md)** - Compact reference used by the Claude Code plugin
-
-## Project Structure
-
+```bash
+git clone https://github.com/eran-broder/playwright-server
+cd playwright-server
+npm install
+npx playwright install chromium
+npm run dev
 ```
-playwright-server/
-├── .claude-plugin/       # Claude Code plugin manifest
-│   └── plugin.json
-├── skills/browse/        # Claude Code skill definition
-│   └── SKILL.md
-├── src/                  # Server source code
-│   ├── server.ts         # Express routes
-│   ├── browser-manager.ts
-│   ├── activity-recorder.ts
-│   ├── screenshot-manager.ts
-│   ├── script-manager.ts
-│   ├── file-manager.ts   # Generic base class
-│   └── types.ts
-├── screenshots/          # Captured screenshots (gitignored)
-├── scripts/              # Saved scripts (gitignored)
-└── auth.json             # Browser auth state (gitignored, optional)
-```
+
+`npm run dev` goes through the same CLI as the published binary, so it also gets a fresh port + tempdir per invocation.
+
+## License
+
+MIT
