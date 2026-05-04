@@ -9,10 +9,7 @@
   },
   "files": [
     "dist",
-    "skills",
-    ".claude-plugin",
     "README.md",
-    "README-AI-AGENT.md",
     "LICENSE"
   ],
   "scripts": {
