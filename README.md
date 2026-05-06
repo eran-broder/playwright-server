@@ -20,8 +20,11 @@ npm run dev
 ### Published binary
 ```bash
 npm install -g playwright-http-server
-playwright-http-server
+playwright-http-server                 # the server
+pwhs --help                            # the CLI wrapper, also installed
 ```
+
+Two binaries ship with the package: `playwright-http-server` (the HTTP server itself) and `pwhs` (a terse CLI for driving running servers — see below).
 
 Every invocation spawns an **isolated session** — a fresh tempdir for screenshots/scripts and an OS-picked free port. Both are printed on startup:
 
@@ -87,7 +90,12 @@ This is by design: with multiple servers up, "guessing" silently is worse than f
 
 ### Lifecycle and discovery
 
-Each running server registers itself in `~/.pwhs/sessions.json` (or `%LOCALAPPDATA%\pwhs\sessions.json` on Windows) with `{port, workdir, pid, startedAt}`. `pwhs ls` reads it and prunes entries whose pid is no longer alive, so the listing is always accurate even after ungraceful exits.
+Each running server registers itself in a session registry file with `{port, workdir, pid, startedAt}`:
+
+- Linux / macOS: `$XDG_STATE_HOME/pwhs/sessions.json` (defaults to `~/.local/state/pwhs/sessions.json`)
+- Windows: `%LOCALAPPDATA%\pwhs\sessions.json`
+
+`pwhs ls` reads this file, validates it with zod, and prunes entries whose pid is no longer alive — so the listing is always accurate even after ungraceful exits.
 
 ### Verb reference
 
@@ -294,10 +302,12 @@ Serves the PNG file directly (not base64). E.g. `GET /screenshot/after-login.png
 Runs JavaScript **inside the page context** (like browser devtools console):
 
 ```json
-{ "code": "return document.querySelectorAll('a').length" }
+{ "code": "document.querySelectorAll('a').length" }
 ```
 
 Response: `{ "success": true, "result": 12 }`
+
+> The body is treated as an **expression**, not a function body. Don't use a top-level `return`. For multi-statement code that needs a return value, use `/script/execute-playwright` (which is a real async function) or wrap in an IIFE: `(() => { ... return x; })()`.
 
 ### POST /script/execute-playwright
 
@@ -424,16 +434,34 @@ await context.storageState({ path: 'auth.json' });
 
 ## Architecture
 
-The server is built from focused modules:
+The package builds from two binaries that share a session registry.
+
+**Server (`playwright-http-server`):**
 
 | Module | Responsibility |
 |--------|---------------|
 | `cli.ts` | Arg parsing, tempdir/port setup, env wiring |
-| `server.ts` | Express routes and request validation |
+| `server.ts` | Express routes; registers in the session registry on start |
 | `browser-manager.ts` | Playwright browser/context/page lifecycle |
 | `activity-recorder.ts` | Event capture (network, console, errors, navigation, dialogs) |
 | `screenshot-manager.ts` | Screenshot naming, path management, listing |
 | `script-manager.ts` | Save and execute named Playwright scripts |
+
+**CLI (`pwhs`):**
+
+| Module | Responsibility |
+|--------|---------------|
+| `pwhs.ts` | Argv dispatch — lifecycle verbs vs. API verbs |
+| `pwhs/lifecycle.ts` | `up`/`down`/`ls`, port resolution from `-p` and `$PWHS_PORT` |
+| `pwhs/verbs.ts` | `VerbName` enum and the verb table (one row per endpoint) |
+| `pwhs/http.ts` | `request()` + zod response schemas; one fetch path for all verbs |
+| `pwhs/help.ts` / `pwhs/format.ts` | Help text and stdout formatting |
+
+**Shared:**
+
+| Module | Responsibility |
+|--------|---------------|
+| `session-registry.ts` | Read/write the per-host sessions file with zod validation; prunes dead pids on read |
 
 ---
 
