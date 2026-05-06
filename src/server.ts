@@ -5,6 +5,7 @@ import { BrowserManager } from './browser-manager';
 import { ActivityRecorder } from './activity-recorder';
 import { ScriptManager } from './script-manager';
 import { ScreenshotManager } from './screenshot-manager';
+import { register, unregister } from './session-registry';
 import type {
   ServerConfig,
   NavigateOptions,
@@ -388,6 +389,20 @@ async function main(): Promise<void> {
     printEndpoints();
     await browserManager.start();
     console.log('Browser initialized');
+
+    register({
+      port: actualPort,
+      workdir: process.cwd(),
+      pid: process.pid,
+      startedAt: Date.now(),
+    });
+
+    const cleanup = () => {
+      try { unregister(process.pid); } catch { /* best effort */ }
+    };
+    process.on('SIGINT', () => { cleanup(); process.exit(0); });
+    process.on('SIGTERM', () => { cleanup(); process.exit(0); });
+    process.on('exit', cleanup);
   });
 }
 
