@@ -398,7 +398,7 @@ async function main(): Promise<void> {
     });
 
     const cleanup = () => {
-      try { unregister(process.pid); } catch { /* best effort */ }
+      try { unregister(process.pid); } catch { return; }
     };
     process.on('SIGINT', () => { cleanup(); process.exit(0); });
     process.on('SIGTERM', () => { cleanup(); process.exit(0); });
