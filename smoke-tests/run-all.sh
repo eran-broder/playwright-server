@@ -11,6 +11,7 @@ TESTS=(
   "40-playwright-script.sh"
   "50-sdk.sh"
   "60-cli-contract.sh"
+  "70-agent-repl.sh"
 )
 
 pass=()

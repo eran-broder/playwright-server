@@ -22,6 +22,7 @@ Each script auto-detects the local build via `node $SCRIPT_DIR/../dist/...`. To 
 | [40-playwright-script.sh](40-playwright-script.sh) | `/script/execute-playwright` patterns — the escape hatch for full Playwright API access (page, context, browser). |
 | [50-sdk.ts](50-sdk.ts) (run via [50-sdk.sh](50-sdk.sh)) | TypeScript SDK: `import { startServer } from 'playwright-http-server'` → typed methods with zod-validated responses, no curl needed. |
 | [60-cli-contract.sh](60-cli-contract.sh) | Asserts the CLI contract: help text, error messages and exit codes, flag-anywhere parsing, every `pwhs` verb, multi-session ambiguity. |
+| [70-agent-repl.sh](70-agent-repl.sh) | Drive the SDK from a stateful Node REPL ([agent-repl](https://github.com/eran-broder/agent-repl)). One `globalThis.s = await startServer()`, then many independent `nrepl exec` calls share the same browser. Skipped automatically when `nrepl` is not on PATH (override with `NREPL="node /path/to/agent-repl/node/src/cli.js"`). |
 
 ## Reading the tests
 
