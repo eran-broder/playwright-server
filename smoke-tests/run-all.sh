@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# run-all.sh — execute every smoke test in order. Prints a summary at the end.
-#
-# Run from repo root:  bash smoke-tests/run-all.sh
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

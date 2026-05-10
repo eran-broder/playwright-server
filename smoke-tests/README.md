@@ -25,6 +25,13 @@ Each script auto-detects the local build via `node $SCRIPT_DIR/../dist/...`. To 
 
 ## Reading the tests
 
+Each test file is pure behaviour — no setup boilerplate, no helper definitions, no narrative comments. Setup, assertions, and lifecycle live in [`_helpers.sh`](_helpers.sh) (sourced by every bash test) and [`_helpers.ts`](_helpers.ts) (imported by `50-sdk.ts`).
+
+- `start_session [server-flags...]` — spawn a server via `pwhs up`, set the cleanup trap, export `$PWHS_PORT`. Sets the global `PORT` for inspection. Forwards any args to the server (e.g. `start_session --browser edge --profile Default`).
+- `start_session_via_server_log` — same outcome but spawns `playwright-http-server` directly and parses the port from the startup log. Used by `10-curl.sh` to demonstrate the no-pwhs path.
+- `cleanup_all_sessions` — wired into the EXIT trap by `start_session`.
+- `pwhs_play_heredoc` — feeds a heredoc to `pwhs play`, so multi-line JS doesn't fight bash quoting.
+- `assert_contains` / `assert_fails_with` / `assert_ok` — used by `60-cli-contract.sh`. Each updates `assert_pass` / `assert_fail` counters; call `print_summary_and_exit` at the end.
+- `section "title"` — prints a labelled heading.
 - Multi-line JavaScript is passed via heredocs (`<<'EOF'`) so bash doesn't mangle quotes/backticks.
-- Every test uses `set -euo pipefail`; if any step fails the script aborts and the trap kills the spawned server.
 - Output is shown raw (no jq/python parsing) so you see exactly what the API returns.

@@ -1,11 +1,5 @@
 import { startServer } from '../dist/client';
-
-const assertEq = <T>(label: string, actual: T, expected: T): void => {
-  if (actual !== expected) {
-    throw new Error(`${label}: expected ${String(expected)}, got ${String(actual)}`);
-  }
-  console.log(`  ${label}: ${String(actual)}`);
-};
+import { assertEq, assertContains, assertEndsWith } from './_helpers';
 
 const main = async (): Promise<void> => {
   const session = await startServer();
@@ -14,29 +8,20 @@ const main = async (): Promise<void> => {
   try {
     await session.nav('https://example.com');
 
-    const url: string = await session.url();
-    assertEq('url ends with example.com/', url, 'https://example.com/');
-
-    const title: string = await session.title();
-    assertEq('title', title, 'Example Domain');
-
-    const links: number = await session.eval<number>('document.querySelectorAll("a").length');
-    assertEq('link count', links, 1);
-
-    const snap: string = await session.snap();
-    if (!snap.includes('Example Domain')) throw new Error('snapshot missing heading');
-    console.log(`  snap.length: ${snap.length}`);
-
-    const shot = await session.shot('sdk-shot');
-    if (!shot.path.endsWith('sdk-shot.png')) throw new Error(`unexpected shot path: ${shot.path}`);
-    console.log(`  screenshot: ${shot.path}`);
-
-    const cookieCount: number = await session.play<number>(
-      'return (await context.cookies()).length;',
+    assertEq('url', await session.url(), 'https://example.com/');
+    assertEq('title', await session.title(), 'Example Domain');
+    assertEq(
+      'link count',
+      await session.eval<number>('document.querySelectorAll("a").length'),
+      1,
     );
-    console.log(`  cookies: ${cookieCount}`);
+    assertContains('snap', await session.snap(), 'Example Domain');
+    assertEndsWith('shot path', (await session.shot('sdk-shot')).path, 'sdk-shot.png');
 
-    console.log('OK — SDK smoke test passed.');
+    const cookies = await session.play<number>('return (await context.cookies()).length;');
+    console.log(`  cookies: ${cookies}`);
+
+    console.log('OK — SDK');
   } finally {
     await session.close();
   }
