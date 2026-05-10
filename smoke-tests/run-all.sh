@@ -14,6 +14,7 @@ TESTS=(
   "30-edge-profile.sh"
   "40-playwright-script.sh"
   "50-sdk.sh"
+  "60-cli-contract.sh"
 )
 
 pass=()
