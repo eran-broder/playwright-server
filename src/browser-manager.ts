@@ -2,12 +2,30 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { chromium, devices, Browser, BrowserContext, Page } from 'playwright';
 import type { BrowserStatus } from './types';
+import {
+  BrowserKind,
+  ProfileMode,
+  Channel,
+  channelFor,
+  prepareUserDataDir,
+  CRITICAL_PROFILE_FILES,
+} from './profile-finder';
 
 export interface StartOptions {
-  /** Playwright device name for emulation, e.g. "iPhone 14", "Pixel 7", "iPad Mini".
-   *  Sets touch + mobile UA + viewport + DPR atomically. */
   device?: string;
+  browser?: BrowserKind;
+  profile?: string;
+  profileMode?: ProfileMode;
+  userDataDir?: string;
 }
+
+type DeviceConfig = Parameters<Browser['newContext']>[0];
+
+const removeUndefined = <T extends Record<string, unknown>>(obj: T): Partial<T> =>
+  Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as Partial<T>;
+
+const isPersistentMode = (opts: StartOptions): boolean =>
+  Boolean(opts.profile || opts.userDataDir);
 
 export class BrowserManager {
   private browser: Browser | null = null;
@@ -15,6 +33,7 @@ export class BrowserManager {
   private page: Page | null = null;
   private onPageCreated?: (page: Page) => void;
   private currentDevice: string | null = null;
+  private currentOpts: StartOptions = {};
 
   setOnPageCreated(callback: (page: Page) => void): void {
     this.onPageCreated = callback;
@@ -22,28 +41,16 @@ export class BrowserManager {
 
   async start(opts: StartOptions = {}): Promise<void> {
     await this.stop();
-    this.browser = await chromium.launch({ headless: false });
+    this.currentOpts = opts;
 
-    let deviceConfig: Parameters<Browser['newContext']>[0] = {};
-    if (opts.device) {
-      const d = devices[opts.device];
-      if (!d) throw new Error(`Unknown device: ${opts.device}. Try "iPhone 14", "Pixel 7", etc.`);
-      deviceConfig = { ...d };
-      this.currentDevice = opts.device;
+    const channel = opts.browser ? channelFor(opts.browser) : undefined;
+    const deviceConfig = this.resolveDeviceConfig(opts.device);
+
+    if (isPersistentMode(opts)) {
+      await this.startPersistent(opts, channel, deviceConfig);
     } else {
-      this.currentDevice = null;
+      await this.startEphemeral(channel, deviceConfig);
     }
-
-    const authPath = process.env.AUTH_PATH || path.join(process.cwd(), 'auth.json');
-    if (fs.existsSync(authPath)) {
-        console.log('Loading auth state from ' + authPath);
-        const state = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
-        this.context = await this.browser.newContext({ ...deviceConfig, storageState: state });
-    } else {
-        this.context = await this.browser.newContext(deviceConfig);
-    }
-
-    this.page = await this.context.newPage();
 
     if (this.onPageCreated && this.page) {
       this.onPageCreated(this.page);
@@ -51,6 +58,9 @@ export class BrowserManager {
   }
 
   async stop(): Promise<void> {
+    if (this.context && !this.browser) {
+      await this.context.close();
+    }
     if (this.browser) {
       await this.browser.close();
     }
@@ -61,7 +71,8 @@ export class BrowserManager {
   }
 
   async restart(opts: StartOptions = {}): Promise<void> {
-    await this.start(opts);
+    const overrides = removeUndefined(opts as Record<string, unknown>) as StartOptions;
+    await this.start({ ...this.currentOpts, ...overrides });
   }
 
   getCurrentDevice(): string | null {
@@ -86,7 +97,7 @@ export class BrowserManager {
 
   getStatus(): BrowserStatus {
     return {
-      hasBrowser: this.browser !== null,
+      hasBrowser: this.context !== null,
       hasContext: this.context !== null,
       hasPage: this.page !== null,
       currentUrl: this.page?.url(),
@@ -180,7 +191,7 @@ export class BrowserManager {
       'page',
       'context',
       'browser',
-      `return (async () => { ${code} })();`
+      `return (async () => { ${code} })();`,
     );
 
     return asyncFn(page, context, browser) as Promise<T>;
@@ -222,4 +233,67 @@ export class BrowserManager {
       }
     }
   }
+
+  private resolveDeviceConfig(device?: string): DeviceConfig {
+    if (!device) {
+      this.currentDevice = null;
+      return {};
+    }
+    const d = devices[device];
+    if (!d) {
+      throw new Error(`Unknown device: ${device}. Try "iPhone 14", "Pixel 7", etc.`);
+    }
+    this.currentDevice = device;
+    return { ...d };
+  }
+
+  private async startEphemeral(channel: Channel, deviceConfig: DeviceConfig): Promise<void> {
+    this.browser = await chromium.launch({ headless: false, channel });
+    const authPath = process.env.AUTH_PATH || path.join(process.cwd(), 'auth.json');
+    if (fs.existsSync(authPath)) {
+      console.log('Loading auth state from ' + authPath);
+      const state = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
+      this.context = await this.browser.newContext({ ...deviceConfig, storageState: state });
+    } else {
+      this.context = await this.browser.newContext(deviceConfig);
+    }
+    this.page = await this.context.newPage();
+  }
+
+  private async startPersistent(
+    opts: StartOptions,
+    channel: Channel,
+    deviceConfig: DeviceConfig,
+  ): Promise<void> {
+    const browser = opts.browser ?? BrowserKind.Chromium;
+    const profile = opts.profile ?? 'Default';
+    const mode = opts.profileMode ?? ProfileMode.Copy;
+    const setup = await prepareUserDataDir(browser, profile, mode, process.cwd(), opts.userDataDir);
+    console.log(`Launching ${browser} with profile "${profile}" (${mode}) at ${setup.userDataDir}`);
+    warnSkippedCriticalFiles(setup.skipped, browser);
+
+    this.context = await chromium.launchPersistentContext(setup.userDataDir, {
+      headless: false,
+      channel,
+      args: [setup.profileArg],
+      ...deviceConfig,
+    });
+    this.browser = this.context.browser();
+    const existing = this.context.pages();
+    this.page = existing[0] ?? (await this.context.newPage());
+  }
 }
+
+const warnSkippedCriticalFiles = (skipped: string[], browser: BrowserKind): void => {
+  const criticalSkipped = skipped.filter((p) =>
+    CRITICAL_PROFILE_FILES.some((name) => p.endsWith(`\\${name}`) || p.endsWith(`/${name}`)),
+  );
+  if (criticalSkipped.length === 0) return;
+  console.warn(
+    `[warning] Could not copy ${criticalSkipped.length} critical file(s) — likely locked by a running ${browser} instance:`,
+  );
+  for (const p of criticalSkipped) console.warn(`  ${p}`);
+  console.warn(
+    `Close ${browser} fully and restart the server for cookies/logins to transfer.`,
+  );
+};

@@ -41,14 +41,38 @@ Run as many concurrent instances as you want; sessions never collide.
 |------|-------------|
 | `--port <n>` | Pin a specific port instead of auto-picking. |
 | `--dir <path>` | Pin a specific working directory instead of a fresh tempdir. |
+| `--browser <kind>` | `chromium` (default), `edge`, or `chrome`. Picks which engine to launch. |
+| `--profile <name>` | Profile name (e.g. `Default`, `"Profile 1"`). Implies persistent-context mode. |
+| `--profile-mode <mode>` | `copy` (default) snapshots the profile to the session tempdir; `live` launches on the real path. |
+| `--user-data-dir <path>` | Override the auto-detected user-data-dir. |
 | `-h, --help` | Show help. |
 
 ```bash
 playwright-http-server --port 3456           # fixed port, fresh tempdir
 playwright-http-server --dir ./mySession     # fixed dir, auto port
+playwright-http-server --browser edge --profile Default
+playwright-http-server --browser chrome --profile "Profile 1" --profile-mode live
 ```
 
-Env vars also work: `PORT`, `SCREENSHOTS_DIR`, `SCRIPTS_DIR`.
+Env vars also work: `PORT`, `SCREENSHOTS_DIR`, `SCRIPTS_DIR`, `BROWSER`, `PROFILE`, `PROFILE_MODE`, `USER_DATA_DIR`.
+
+### Using your real Edge / Chrome profile
+
+`--browser edge --profile Default` (or Chrome equivalent) launches your installed browser using a copy of the named profile — bookmarks, history, extensions, preferences, and (with the source browser closed) cookies + saved logins all carry over.
+
+Auto-detected user-data-dirs:
+
+| Browser | Windows | macOS | Linux |
+|---------|---------|-------|-------|
+| Edge | `%LOCALAPPDATA%\Microsoft\Edge\User Data` | `~/Library/Application Support/Microsoft Edge` | `~/.config/microsoft-edge` |
+| Chrome | `%LOCALAPPDATA%\Google\Chrome\User Data` | `~/Library/Application Support/Google/Chrome` | `~/.config/google-chrome` |
+
+**Two modes:**
+
+- `--profile-mode copy` (default, safe): snapshots the profile to the session tempdir (excluding caches), launches on the copy. The real profile is never touched. Caveat: the source browser must be **fully closed** during the copy, otherwise its cookie SQLite is locked and won't transfer — you'll see logged-out sessions in the launched browser. The server prints a clear warning listing skipped critical files.
+- `--profile-mode live`: launches Playwright directly on the real profile path. Full bidirectional sync, but the source browser must not be running and any automation changes persist back to your real profile. Use with care.
+
+If you specify a profile that doesn't exist, the server prints the available profile names.
 
 ---
 

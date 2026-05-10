@@ -1,11 +1,12 @@
 import express, { Request, Response, NextFunction } from 'express';
 import * as path from 'path';
 
-import { BrowserManager } from './browser-manager';
+import { BrowserManager, StartOptions } from './browser-manager';
 import { ActivityRecorder } from './activity-recorder';
 import { ScriptManager } from './script-manager';
 import { ScreenshotManager } from './screenshot-manager';
 import { register, unregister } from './session-registry';
+import { parseBrowser, parseProfileMode } from './profile-finder';
 import type {
   ServerConfig,
   NavigateOptions,
@@ -380,6 +381,15 @@ function printEndpoints(): void {
   console.log('');
 }
 
+function startupOptionsFromEnv(): StartOptions {
+  const opts: StartOptions = {};
+  if (process.env.BROWSER) opts.browser = parseBrowser(process.env.BROWSER);
+  if (process.env.PROFILE) opts.profile = process.env.PROFILE;
+  if (process.env.PROFILE_MODE) opts.profileMode = parseProfileMode(process.env.PROFILE_MODE);
+  if (process.env.USER_DATA_DIR) opts.userDataDir = process.env.USER_DATA_DIR;
+  return opts;
+}
+
 async function main(): Promise<void> {
   const server = app.listen(config.port, async () => {
     const addr = server.address();
@@ -387,7 +397,12 @@ async function main(): Promise<void> {
     console.log(`Playwright Server running on http://localhost:${actualPort}`);
     console.log('');
     printEndpoints();
-    await browserManager.start();
+    try {
+      await browserManager.start(startupOptionsFromEnv());
+    } catch (err) {
+      console.error('Browser failed to start:', err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
     console.log('Browser initialized');
 
     register({
