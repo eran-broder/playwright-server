@@ -1,11 +1,5 @@
-import { spawn } from 'child_process';
-import * as path from 'path';
 import { list as listSessions } from '../session-registry';
-
-const SERVER_REGISTER_TIMEOUT_MS = 60_000;
-const SERVER_POLL_INTERVAL_MS = 150;
-
-const sleep = (ms: number): Promise<void> => new Promise((res) => setTimeout(res, ms));
+import { spawnServer } from './spawn';
 
 export const extractPort = (args: string[]): { port?: number; args: string[] } => {
   const out: string[] = [];
@@ -43,28 +37,8 @@ export const resolvePort = (flagPort: number | undefined): number => {
 };
 
 export const up = async (serverFlags: string[]): Promise<void> => {
-  const cliPath = path.join(__dirname, '..', 'cli.js');
-  const child = spawn(process.execPath, [cliPath, ...serverFlags], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  });
-  child.unref();
-  const pid = child.pid;
-  if (!pid) throw new Error('Failed to spawn server');
-
-  const deadline = Date.now() + SERVER_REGISTER_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const entry = listSessions().find((s) => s.pid === pid);
-    if (entry) {
-      process.stdout.write(`${entry.port}\n`);
-      return;
-    }
-    await sleep(SERVER_POLL_INTERVAL_MS);
-  }
-  throw new Error(
-    `Server (pid ${pid}) did not register within ${SERVER_REGISTER_TIMEOUT_MS / 1000}s`,
-  );
+  const { port } = await spawnServer(serverFlags);
+  process.stdout.write(`${port}\n`);
 };
 
 const formatAge = (ms: number): string => {

@@ -9,10 +9,11 @@ npm install -g playwright-http-server
 npx playwright install chromium    # one-time, if you want the default engine
 ```
 
-Two binaries ship with the package:
+Three ways to drive it:
 
-- `playwright-http-server` — the server itself
+- `playwright-http-server` — the server itself, drive via HTTP / curl
 - `pwhs` — a terse CLI for driving running servers (`pwhs up`, `pwhs nav`, `pwhs click`, ...)
+- `import { startServer } from 'playwright-http-server'` — TypeScript SDK with typed, zod-validated methods
 
 ## Run
 
@@ -37,6 +38,7 @@ The **single source of truth** for what this package does is the runnable smoke 
 | [smoke-tests/20-multi-session.sh](smoke-tests/20-multi-session.sh) | Run multiple concurrent servers and pick which one each call hits |
 | [smoke-tests/30-edge-profile.sh](smoke-tests/30-edge-profile.sh) | Launch your installed Edge with your real Default profile |
 | [smoke-tests/40-playwright-script.sh](smoke-tests/40-playwright-script.sh) | Use `/script/execute-playwright` for full Playwright API access |
+| [smoke-tests/50-sdk.ts](smoke-tests/50-sdk.ts) | Use the TypeScript SDK — typed methods, no curl |
 
 ```bash
 bash smoke-tests/run-all.sh   # run every test

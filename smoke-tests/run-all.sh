@@ -13,6 +13,7 @@ TESTS=(
   "20-multi-session.sh"
   "30-edge-profile.sh"
   "40-playwright-script.sh"
+  "50-sdk.sh"
 )
 
 pass=()
