@@ -285,15 +285,11 @@ export class BrowserManager {
 }
 
 const warnSkippedCriticalFiles = (skipped: string[], browser: BrowserKind): void => {
-  const criticalSkipped = skipped.filter((p) =>
-    CRITICAL_PROFILE_FILES.some((name) => p.endsWith(`\\${name}`) || p.endsWith(`/${name}`)),
-  );
-  if (criticalSkipped.length === 0) return;
+  const critical = skipped.filter((p) => CRITICAL_PROFILE_FILES.includes(path.basename(p)));
+  if (critical.length === 0) return;
   console.warn(
-    `[warning] Could not copy ${criticalSkipped.length} critical file(s) — likely locked by a running ${browser} instance:`,
+    `[warning] Could not copy ${critical.length} critical file(s) — likely locked by a running ${browser} instance:`,
   );
-  for (const p of criticalSkipped) console.warn(`  ${p}`);
-  console.warn(
-    `Close ${browser} fully and restart the server for cookies/logins to transfer.`,
-  );
+  for (const p of critical) console.warn(`  ${p}`);
+  console.warn(`Close ${browser} fully and restart the server for cookies/logins to transfer.`);
 };
