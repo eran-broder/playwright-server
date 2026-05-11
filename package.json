@@ -1,6 +1,6 @@
 {
   "name": "playwright-http-server",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Local HTTP server that gives AI agents full browser control via REST API. Built on Playwright.",
   "main": "dist/client.js",
   "types": "dist/client.d.ts",
