@@ -86,6 +86,7 @@ export interface BrowserStatus {
   hasContext: boolean;
   hasPage: boolean;
   currentUrl?: string;
+  mode?: string;
 }
 
 // ============ API Response Types ============
@@ -168,8 +169,27 @@ export interface KeyboardOptions {
   key: string;
 }
 
+export enum WaitUntil {
+  Load = 'load',
+  DomContentLoaded = 'domcontentloaded',
+  NetworkIdle = 'networkidle',
+  Commit = 'commit',
+}
+
 export interface NavigateOptions {
   url: string;
+  waitUntil?: WaitUntil;
+}
+
+export enum SnapshotMode {
+  Default = 'default',
+  Ai = 'ai',
+}
+
+export interface SnapshotOptions {
+  mode?: SnapshotMode;
+  boxes?: boolean;
+  depth?: number;
 }
 
 // ============ HAR Types ============
@@ -227,6 +247,7 @@ export interface ServerConfig {
   port: number;
   scriptsDir: string;
   screenshotsDir: string;
+  tracesDir: string;
 }
 
 // ============ Activity Recording Types ============
@@ -239,7 +260,8 @@ export type ActivityType =
   | 'page-error'
   | 'navigation'
   | 'dialog'
-  | 'download';
+  | 'download'
+  | 'websocket';
 
 export type ConsoleMessageType = 'log' | 'debug' | 'info' | 'error' | 'warning' | 'dir' | 'trace' | 'assert';
 
@@ -269,6 +291,24 @@ export interface PageErrorEntry {
 export interface NavigationEntry {
   url: string;
   eventType: 'load' | 'domcontentloaded' | 'framenavigated';
+}
+
+export interface DownloadEntry {
+  url: string;
+  suggestedFilename: string;
+}
+
+export enum WebSocketEventType {
+  Open = 'open',
+  Sent = 'sent',
+  Received = 'received',
+  Close = 'close',
+}
+
+export interface WebSocketEntry {
+  event: WebSocketEventType;
+  url: string;
+  payload?: string;
 }
 
 export interface DialogEntry {

@@ -8,8 +8,11 @@ TESTS=(
   "10-curl.sh"
   "20-multi-session.sh"
   "30-edge-profile.sh"
+  "35-attach.sh"
   "40-playwright-script.sh"
+  "45-ai-snapshot.sh"
   "50-sdk.sh"
+  "55-native-extras.sh"
   "60-cli-contract.sh"
   "70-agent-repl.sh"
 )

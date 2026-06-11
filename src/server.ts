@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
+import * as fs from 'fs';
 import * as path from 'path';
 
 import { BrowserManager, StartOptions } from './browser-manager';
@@ -7,9 +8,19 @@ import { ScriptManager } from './script-manager';
 import { ScreenshotManager } from './screenshot-manager';
 import { register, unregister } from './session-registry';
 import { parseBrowser, parseProfileMode } from './profile-finder';
+import {
+  NavigateBody,
+  HistoryBody,
+  SnapshotQuery,
+  CdpBody,
+  TraceStartBody,
+  ClockSetBody,
+  ClockInstallBody,
+  ClockFastForwardBody,
+} from './request-schemas';
+import { SnapshotMode } from './types';
 import type {
   ServerConfig,
-  NavigateOptions,
   ScreenshotOptions,
   ClickOptions,
   TypeOptions,
@@ -29,6 +40,7 @@ const config: ServerConfig = {
   port: parseInt(process.env.PORT || '3456'),
   scriptsDir: process.env.SCRIPTS_DIR || path.join(process.cwd(), 'scripts'),
   screenshotsDir: process.env.SCREENSHOTS_DIR || path.join(process.cwd(), 'screenshots'),
+  tracesDir: process.env.TRACES_DIR || path.join(process.cwd(), 'traces'),
 };
 
 // ============ Initialize Services ============
@@ -72,6 +84,7 @@ app.get('/status', (_req: Request, res: Response) => {
     browser: status.hasBrowser,
     page: status.hasPage,
     currentUrl: status.currentUrl,
+    mode: status.mode ?? null,
     recording: activityRecorder.getState(),
     screenshotsDir: screenshotManager.getDirectory(),
     scriptsDir: config.scriptsDir,
@@ -100,9 +113,27 @@ app.post('/browser/restart', asyncHandler(async (req: Request, res: Response) =>
 // ============ Navigation Endpoints ============
 
 app.post('/navigate', asyncHandler(async (req: Request, res: Response) => {
-  const { url } = req.body as NavigateOptions;
-  await browserManager.navigate(url);
+  const { url, waitUntil } = NavigateBody.parse(req.body);
+  await browserManager.navigate(url, waitUntil);
   res.json({ success: true, url });
+}));
+
+app.post('/back', asyncHandler(async (req: Request, res: Response) => {
+  const { waitUntil } = HistoryBody.parse(req.body ?? {});
+  await browserManager.back(waitUntil);
+  res.json({ success: true, url: browserManager.getUrl() });
+}));
+
+app.post('/forward', asyncHandler(async (req: Request, res: Response) => {
+  const { waitUntil } = HistoryBody.parse(req.body ?? {});
+  await browserManager.forward(waitUntil);
+  res.json({ success: true, url: browserManager.getUrl() });
+}));
+
+app.post('/reload', asyncHandler(async (req: Request, res: Response) => {
+  const { waitUntil } = HistoryBody.parse(req.body ?? {});
+  await browserManager.reload(waitUntil);
+  res.json({ success: true, url: browserManager.getUrl() });
 }));
 
 // ============ Screenshot Endpoints ============
@@ -181,8 +212,13 @@ app.get('/content', asyncHandler(async (_req: Request, res: Response) => {
 }));
 
 app.get('/snapshot', asyncHandler(async (req: Request, res: Response) => {
-  const selector = req.query.selector as string | undefined;
-  const snapshot = await browserManager.snapshot(selector);
+  const q = SnapshotQuery.parse(req.query);
+  const mode = q.refs ? SnapshotMode.Ai : q.mode;
+  const snapshot = await browserManager.snapshot(q.selector, {
+    mode,
+    boxes: q.boxes,
+    depth: q.depth,
+  });
   res.json({ success: true, snapshot });
 }));
 
@@ -217,6 +253,45 @@ app.post('/hover', asyncHandler(async (req: Request, res: Response) => {
 app.post('/scroll', asyncHandler(async (req: Request, res: Response) => {
   const { x = 0, y = 0 } = req.body as ScrollOptions;
   await browserManager.scroll(x, y);
+  res.json({ success: true });
+}));
+
+// ============ CDP / Tracing / Clock Endpoints ============
+
+app.post('/cdp', asyncHandler(async (req: Request, res: Response) => {
+  const { method, params } = CdpBody.parse(req.body);
+  const result = await browserManager.cdpSend(method, params);
+  res.json({ success: true, result });
+}));
+
+app.post('/trace/start', asyncHandler(async (req: Request, res: Response) => {
+  const opts = TraceStartBody.parse(req.body ?? {});
+  await browserManager.traceStart(opts);
+  res.json({ success: true, message: 'Tracing started' });
+}));
+
+app.post('/trace/stop', asyncHandler(async (_req: Request, res: Response) => {
+  fs.mkdirSync(config.tracesDir, { recursive: true });
+  const filepath = path.join(config.tracesDir, `trace-${Date.now()}.zip`);
+  await browserManager.traceStop(filepath);
+  res.json({ success: true, path: filepath });
+}));
+
+app.post('/clock/install', asyncHandler(async (req: Request, res: Response) => {
+  const { time } = ClockInstallBody.parse(req.body ?? {});
+  await browserManager.clockInstall(time);
+  res.json({ success: true });
+}));
+
+app.post('/clock/set', asyncHandler(async (req: Request, res: Response) => {
+  const { time } = ClockSetBody.parse(req.body);
+  await browserManager.clockSetFixedTime(time);
+  res.json({ success: true });
+}));
+
+app.post('/clock/fast-forward', asyncHandler(async (req: Request, res: Response) => {
+  const { ticks } = ClockFastForwardBody.parse(req.body);
+  await browserManager.clockFastForward(ticks);
   res.json({ success: true });
 }));
 
@@ -342,7 +417,10 @@ function printEndpoints(): void {
   console.log('  POST /browser/restart           - Restart browser');
   console.log('');
   console.log('Navigation:');
-  console.log('  POST /navigate                  - Navigate to URL {url}');
+  console.log('  POST /navigate                  - Navigate to URL {url, waitUntil?}');
+  console.log('  POST /back                      - History back {waitUntil?}');
+  console.log('  POST /forward                   - History forward {waitUntil?}');
+  console.log('  POST /reload                    - Reload page {waitUntil?}');
   console.log('');
   console.log('Screenshots:');
   console.log('  POST /screenshot                - Take screenshot {name?, fullPage?}');
@@ -360,7 +438,8 @@ function printEndpoints(): void {
   console.log('  POST /type                      - Type text {selector, text}');
   console.log('  POST /wait                      - Wait for selector {selector, timeout?}');
   console.log('  GET  /content                   - Get page HTML');
-  console.log('  GET  /snapshot                  - Accessibility tree (YAML) {selector?}');
+  console.log('  GET  /snapshot                  - Accessibility tree (YAML) {selector?, refs?, boxes?, depth?}');
+  console.log('                                    refs=true adds [ref=eN]; act on them via selector "aria-ref=eN"');
   console.log('  GET  /title                     - Get page title');
   console.log('  GET  /url                       - Get current URL');
   console.log('  POST /keyboard                  - Press key {key}');
@@ -368,7 +447,15 @@ function printEndpoints(): void {
   console.log('  POST /hover                     - Hover element {selector}');
   console.log('  POST /scroll                    - Scroll page {x?, y?}');
   console.log('');
-  console.log('Activity Recording (auto-starts, captures network + console + errors):');
+  console.log('CDP / Tracing / Clock:');
+  console.log('  POST /cdp                       - Raw CDP command {method, params?}');
+  console.log('  POST /trace/start               - Start Playwright tracing {screenshots?, snapshots?}');
+  console.log('  POST /trace/stop                - Stop tracing, returns trace.zip path');
+  console.log('  POST /clock/install             - Install controllable clock {time?}');
+  console.log('  POST /clock/set                 - Set fixed time {time}');
+  console.log('  POST /clock/fast-forward        - Jump clock forward {ticks}');
+  console.log('');
+  console.log('Activity Recording (auto-starts, captures network + console + errors + ws + downloads):');
   console.log('  GET  /activity/poll?since=N     - Poll new events since watermark N (KEY ENDPOINT)');
   console.log('  GET  /activity/check?since=N    - Quick check if anything happened');
   console.log('  GET  /activity/log              - Get activity log (filters: since, types, limit)');
@@ -387,6 +474,7 @@ function startupOptionsFromEnv(): StartOptions {
   if (process.env.PROFILE) opts.profile = process.env.PROFILE;
   if (process.env.PROFILE_MODE) opts.profileMode = parseProfileMode(process.env.PROFILE_MODE);
   if (process.env.USER_DATA_DIR) opts.userDataDir = process.env.USER_DATA_DIR;
+  if (process.env.ATTACH) opts.attach = process.env.ATTACH;
   return opts;
 }
 

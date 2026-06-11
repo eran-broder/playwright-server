@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { chromium, devices, Browser, BrowserContext, Page } from 'playwright';
-import type { BrowserStatus } from './types';
+import { chromium, devices, Browser, BrowserContext, Locator, Page } from 'playwright';
+import type { BrowserStatus, SnapshotOptions } from './types';
+import { WaitUntil } from './types';
 import {
   BrowserKind,
   ProfileMode,
@@ -10,6 +11,14 @@ import {
   prepareUserDataDir,
   CRITICAL_PROFILE_FILES,
 } from './profile-finder';
+import { resolveAttachUrl } from './cdp-finder';
+import { CdpBridge } from './cdp-bridge';
+
+export enum LaunchMode {
+  Ephemeral = 'ephemeral',
+  Persistent = 'persistent',
+  Attached = 'attached',
+}
 
 export interface StartOptions {
   device?: string;
@@ -17,12 +26,24 @@ export interface StartOptions {
   profile?: string;
   profileMode?: ProfileMode;
   userDataDir?: string;
+  attach?: string;
 }
 
+export interface TraceStartOptions {
+  screenshots?: boolean;
+  snapshots?: boolean;
+}
+
+export type ClockTime = number | string;
+
 type DeviceConfig = Parameters<Browser['newContext']>[0];
+type GotoWaitUntil = NonNullable<Parameters<Page['goto']>[1]>['waitUntil'];
+type AriaSnapshotOptions = Parameters<Locator['ariaSnapshot']>[0];
 
 const removeUndefined = <T extends Record<string, unknown>>(obj: T): Partial<T> =>
   Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as Partial<T>;
+
+const toGotoWaitUntil = (w: WaitUntil): GotoWaitUntil => (w as string) as GotoWaitUntil;
 
 const isPersistentMode = (opts: StartOptions): boolean =>
   Boolean(opts.profile || opts.userDataDir);
@@ -34,6 +55,8 @@ export class BrowserManager {
   private onPageCreated?: (page: Page) => void;
   private currentDevice: string | null = null;
   private currentOpts: StartOptions = {};
+  private mode: LaunchMode | null = null;
+  private cdp = new CdpBridge();
 
   setOnPageCreated(callback: (page: Page) => void): void {
     this.onPageCreated = callback;
@@ -46,7 +69,9 @@ export class BrowserManager {
     const channel = opts.browser ? channelFor(opts.browser) : undefined;
     const deviceConfig = this.resolveDeviceConfig(opts.device);
 
-    if (isPersistentMode(opts)) {
+    if (opts.attach) {
+      await this.startAttached(opts.attach);
+    } else if (isPersistentMode(opts)) {
       await this.startPersistent(opts, channel, deviceConfig);
     } else {
       await this.startEphemeral(channel, deviceConfig);
@@ -58,16 +83,21 @@ export class BrowserManager {
   }
 
   async stop(): Promise<void> {
-    if (this.context && !this.browser) {
-      await this.context.close();
-    }
-    if (this.browser) {
-      await this.browser.close();
+    if (this.mode === LaunchMode.Attached) {
+      if (this.browser) await this.browser.close();
+    } else {
+      if (this.context && !this.browser) {
+        await this.context.close();
+      }
+      if (this.browser) {
+        await this.browser.close();
+      }
     }
     this.browser = null;
     this.context = null;
     this.page = null;
     this.currentDevice = null;
+    this.mode = null;
   }
 
   async restart(opts: StartOptions = {}): Promise<void> {
@@ -95,12 +125,17 @@ export class BrowserManager {
     return this.page !== null;
   }
 
+  getMode(): LaunchMode | null {
+    return this.mode;
+  }
+
   getStatus(): BrowserStatus {
     return {
       hasBrowser: this.context !== null,
       hasContext: this.context !== null,
       hasPage: this.page !== null,
       currentUrl: this.page?.url(),
+      mode: this.mode ?? undefined,
     };
   }
 
@@ -111,9 +146,35 @@ export class BrowserManager {
     return this.page;
   }
 
-  async navigate(url: string): Promise<void> {
+  requireContext(): BrowserContext {
+    if (!this.context) {
+      throw new Error('Browser not started');
+    }
+    return this.context;
+  }
+
+  private defaultWaitUntil(): WaitUntil {
+    return this.mode === LaunchMode.Attached ? WaitUntil.Load : WaitUntil.NetworkIdle;
+  }
+
+  async navigate(url: string, waitUntil?: WaitUntil): Promise<void> {
     const page = this.requirePage();
-    await page.goto(url, { waitUntil: 'networkidle' });
+    await page.goto(url, { waitUntil: toGotoWaitUntil(waitUntil ?? this.defaultWaitUntil()) });
+  }
+
+  async back(waitUntil?: WaitUntil): Promise<void> {
+    const page = this.requirePage();
+    await page.goBack({ waitUntil: toGotoWaitUntil(waitUntil ?? WaitUntil.Load) });
+  }
+
+  async forward(waitUntil?: WaitUntil): Promise<void> {
+    const page = this.requirePage();
+    await page.goForward({ waitUntil: toGotoWaitUntil(waitUntil ?? WaitUntil.Load) });
+  }
+
+  async reload(waitUntil?: WaitUntil): Promise<void> {
+    const page = this.requirePage();
+    await page.reload({ waitUntil: toGotoWaitUntil(waitUntil ?? WaitUntil.Load) });
   }
 
   async screenshot(path: string, fullPage: boolean): Promise<void> {
@@ -166,10 +227,43 @@ export class BrowserManager {
     await page.hover(selector);
   }
 
-  async snapshot(selector?: string): Promise<string> {
+  async snapshot(selector?: string, opts: SnapshotOptions = {}): Promise<string> {
     const page = this.requirePage();
     const locator = selector ? page.locator(selector) : page.locator('body');
-    return locator.ariaSnapshot();
+    const ariaOpts = removeUndefined({
+      mode: opts.mode,
+      boxes: opts.boxes,
+      depth: opts.depth,
+    }) as AriaSnapshotOptions;
+    return locator.ariaSnapshot(ariaOpts);
+  }
+
+  cdpSend(method: string, params?: Record<string, unknown>): Promise<unknown> {
+    return this.cdp.send(this.requireContext(), this.requirePage(), method, params);
+  }
+
+  async traceStart(opts: TraceStartOptions = {}): Promise<void> {
+    await this.requireContext().tracing.start({
+      screenshots: opts.screenshots ?? true,
+      snapshots: opts.snapshots ?? true,
+    });
+  }
+
+  async traceStop(filePath: string): Promise<string> {
+    await this.requireContext().tracing.stop({ path: filePath });
+    return filePath;
+  }
+
+  async clockInstall(time?: ClockTime): Promise<void> {
+    await this.requirePage().clock.install(time === undefined ? {} : { time });
+  }
+
+  async clockSetFixedTime(time: ClockTime): Promise<void> {
+    await this.requirePage().clock.setFixedTime(time);
+  }
+
+  async clockFastForward(ticks: ClockTime): Promise<void> {
+    await this.requirePage().clock.fastForward(ticks);
   }
 
   async scroll(x: number, y: number): Promise<void> {
@@ -247,17 +341,25 @@ export class BrowserManager {
     return { ...d };
   }
 
+  private adoptContext(context: BrowserContext, mode: LaunchMode): void {
+    this.context = context;
+    this.mode = mode;
+    context.on('page', (page) => this.onPageCreated?.(page));
+  }
+
   private async startEphemeral(channel: Channel, deviceConfig: DeviceConfig): Promise<void> {
     this.browser = await chromium.launch({ headless: false, channel });
     const authPath = process.env.AUTH_PATH || path.join(process.cwd(), 'auth.json');
+    let context: BrowserContext;
     if (fs.existsSync(authPath)) {
       console.log('Loading auth state from ' + authPath);
       const state = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
-      this.context = await this.browser.newContext({ ...deviceConfig, storageState: state });
+      context = await this.browser.newContext({ ...deviceConfig, storageState: state });
     } else {
-      this.context = await this.browser.newContext(deviceConfig);
+      context = await this.browser.newContext(deviceConfig);
     }
-    this.page = await this.context.newPage();
+    this.adoptContext(context, LaunchMode.Ephemeral);
+    this.page = await context.newPage();
   }
 
   private async startPersistent(
@@ -272,15 +374,27 @@ export class BrowserManager {
     console.log(`Launching ${browser} with profile "${profile}" (${mode}) at ${setup.userDataDir}`);
     warnSkippedCriticalFiles(setup.skipped, browser);
 
-    this.context = await chromium.launchPersistentContext(setup.userDataDir, {
+    const context = await chromium.launchPersistentContext(setup.userDataDir, {
       headless: false,
       channel,
       args: [setup.profileArg],
       ...deviceConfig,
     });
-    this.browser = this.context.browser();
-    const existing = this.context.pages();
-    this.page = existing[0] ?? (await this.context.newPage());
+    this.adoptContext(context, LaunchMode.Persistent);
+    this.browser = context.browser();
+    const existing = context.pages();
+    this.page = existing[0] ?? (await context.newPage());
+  }
+
+  private async startAttached(spec: string): Promise<void> {
+    const url = await resolveAttachUrl(spec);
+    console.log(`Attaching over CDP: ${url}`);
+    this.browser = await chromium.connectOverCDP(url);
+    const context = this.browser.contexts()[0] ?? (await this.browser.newContext());
+    this.adoptContext(context, LaunchMode.Attached);
+    const existing = context.pages();
+    this.page = existing[existing.length - 1] ?? (await context.newPage());
+    for (const page of existing) this.onPageCreated?.(page);
   }
 }
 

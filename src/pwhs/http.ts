@@ -18,6 +18,7 @@ export const ScreenshotResponse = SuccessBase.extend({
 });
 export const ScreenshotsResponse = SuccessBase.extend({ screenshots: z.array(z.unknown()) });
 export const ResultResponse = SuccessBase.extend({ result: z.unknown().optional() });
+export const TraceStopResponse = SuccessBase.extend({ path: z.string() });
 export const PagesResponse = SuccessBase.extend({ pages: z.array(z.unknown()) });
 export const PassthroughResponse = z.unknown();
 

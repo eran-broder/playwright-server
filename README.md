@@ -20,8 +20,11 @@ Three ways to drive it:
 ```bash
 playwright-http-server                                          # ephemeral chromium
 playwright-http-server --browser edge --profile Default         # your real Edge profile
+playwright-http-server --attach auto                            # attach to a browser you already have open
 playwright-http-server --port 3456 --dir ./mySession            # pinned port + workdir
 ```
+
+`--attach` connects over CDP to a running Chrome/Edge — tabs, cookies, and logins included — instead of launching a new browser. Enable remote debugging once (`chrome://inspect/#remote-debugging` on Chrome 146+, or launch with `--remote-debugging-port=9222`), then attach by port, URL, or `auto`. Stopping the server disconnects; your browser stays open.
 
 Every invocation is fully isolated: a fresh tempdir for screenshots/scripts and an OS-picked free port. Both are printed on startup. Run as many concurrent instances as you want.
 
@@ -37,8 +40,11 @@ The **single source of truth** for what this package does is the runnable smoke 
 | [smoke-tests/10-curl.sh](smoke-tests/10-curl.sh) | Use the raw HTTP API with curl |
 | [smoke-tests/20-multi-session.sh](smoke-tests/20-multi-session.sh) | Run multiple concurrent servers and pick which one each call hits |
 | [smoke-tests/30-edge-profile.sh](smoke-tests/30-edge-profile.sh) | Launch your installed Edge with your real Default profile |
+| [smoke-tests/35-attach.sh](smoke-tests/35-attach.sh) | Attach to an already-running browser over CDP (`--attach`) |
 | [smoke-tests/40-playwright-script.sh](smoke-tests/40-playwright-script.sh) | Use `/script/execute-playwright` for full Playwright API access |
+| [smoke-tests/45-ai-snapshot.sh](smoke-tests/45-ai-snapshot.sh) | Take AI snapshots with `[ref=eN]` and click via `aria-ref=eN` — no selector guessing |
 | [smoke-tests/50-sdk.ts](smoke-tests/50-sdk.ts) | Use the TypeScript SDK — typed methods, no curl |
+| [smoke-tests/55-native-extras.sh](smoke-tests/55-native-extras.sh) | Raw CDP commands, Playwright tracing, clock control |
 | [smoke-tests/70-agent-repl.sh](smoke-tests/70-agent-repl.sh) | Drive the SDK from a stateful Node REPL — share one browser across many turns |
 
 ```bash
@@ -56,7 +62,8 @@ npm install -g github:eran-broder/agent-repl#main:/node   # ships `nrepl`
 
 R=$(nrepl create)
 nrepl exec $R "globalThis.sdk = require('playwright-http-server')"
-nrepl exec $R "globalThis.s   = await sdk.startServer()"    # add { browser: 'edge', profile: 'Default' } to use your real profile
+nrepl exec $R "globalThis.s   = await sdk.startServer()"    # add { browser: 'edge', profile: 'Default' } to use your real profile,
+                                                            # or { attach: 'auto' } to attach to a browser you already have open
 
 # … then, in any number of independent exec calls (different shells, different sessions),
 # the same `s` is reachable on globalThis and the same browser handles every request:

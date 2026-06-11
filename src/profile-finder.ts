@@ -43,7 +43,7 @@ export const channelFor = (browser: BrowserKind): Channel => {
   return undefined;
 };
 
-const userDataDirOf = (browser: BrowserKind): string | null => {
+export const userDataDirOf = (browser: BrowserKind): string | null => {
   if (browser === BrowserKind.Chromium) return null;
   const subpath: Record<NodeJS.Platform, Partial<Record<BrowserKind, string[]>>> = {
     win32: {

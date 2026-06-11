@@ -7,9 +7,12 @@ section "help text"
 assert_contains "pwhs --help — Usage banner"          "Usage: pwhs"                   $PWHS --help
 assert_contains "pwhs --help — lists nav verb"        "pwhs nav"                      $PWHS --help
 assert_contains "pwhs --help — lists port selection"  "PWHS_PORT"                     $PWHS --help
+assert_contains "pwhs --help — lists cdp verb"        "pwhs cdp"                      $PWHS --help
+assert_contains "pwhs --help — lists trace verb"      "pwhs trace"                    $PWHS --help
 assert_contains "server --help — usage"               "Usage: playwright-http-server" $SERVER --help
 assert_contains "server --help — lists --browser"     "--browser"                     $SERVER --help
 assert_contains "server --help — lists --profile"     "--profile"                     $SERVER --help
+assert_contains "server --help — lists --attach"      "--attach"                      $SERVER --help
 
 section "empty registry"
 assert_contains  "pwhs ls — no servers"            "No servers running"   $PWHS ls
@@ -58,6 +61,21 @@ assert_contains "pages — list with index"  '"index": 1'  $PWHS pages
 assert_ok       "latest — switch to newest tab"          $PWHS latest
 assert_ok       "switch — by index"                      $PWHS switch 0
 
+assert_contains "snap --ai — includes refs"  "[ref="  $PWHS snap --ai
+
+$PWHS nav https://example.org load >/dev/null
+assert_contains "back — prior url"     "example.com"  $PWHS back
+assert_contains "forward — next url"   "example.org"  $PWHS forward
+assert_contains "reload — same url"    "example.org"  $PWHS reload
+
+assert_contains "cdp — Browser.getVersion"  "product"  $PWHS cdp Browser.getVersion
+
+assert_ok       "trace start"                $PWHS trace start
+assert_contains "trace stop — zip path"      ".zip"     $PWHS trace stop
+
+assert_ok       "clock set"                  $PWHS clock set 1700000000000
+assert_contains "clock — Date.now frozen"    "1700000000000"  $PWHS eval "Date.now()"
+
 assert_contains "stop"     "stopped"     $PWHS stop
 assert_contains "start"    "started"     $PWHS start
 assert_contains "restart"  "restarted"   $PWHS restart
@@ -67,6 +85,10 @@ assert_fails_with "nav with no url"           "pwhs nav <url>"         $PWHS nav
 assert_fails_with "click with no selector"    "pwhs click <selector>"  $PWHS click
 assert_fails_with "type with no text"         "pwhs type"              $PWHS type input
 assert_fails_with "key with no key"           "pwhs key <key>"         $PWHS key
+assert_fails_with "cdp with no method"        "pwhs cdp <method>"      $PWHS cdp
+assert_fails_with "trace with bogus arg"      "pwhs trace <start|stop>" $PWHS trace bogus
+assert_fails_with "clock with bogus arg"      "pwhs clock"             $PWHS clock bogus
+assert_fails_with "clock set with no value"   "pwhs clock set"         $PWHS clock set
 
 section "multi-session ambiguity"
 PORT2=$($PWHS up)

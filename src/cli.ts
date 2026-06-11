@@ -12,6 +12,7 @@ const { values } = parseArgs({
     profile: { type: 'string' },
     'profile-mode': { type: 'string' },
     'user-data-dir': { type: 'string' },
+    attach: { type: 'string' },
     help: { type: 'boolean', short: 'h' },
   },
   allowPositionals: false,
@@ -32,6 +33,9 @@ Options:
                              Implies persistent-context mode.
   --profile-mode <mode>      copy (default, snapshot to tempdir) | live (real path).
   --user-data-dir <path>     Override the auto-detected user-data-dir.
+  --attach <target>          Attach to a running browser over CDP instead of
+                             launching one. Target: port, URL, or "auto"
+                             (DevToolsActivePort of Chrome/Edge, then :9222).
   -h, --help                 Show this help.
 
 Examples:
@@ -39,6 +43,8 @@ Examples:
   playwright-http-server --browser edge --profile Default
   playwright-http-server --browser chrome --profile "Profile 1" --profile-mode live
   playwright-http-server --user-data-dir ./my-profile
+  playwright-http-server --attach auto
+  playwright-http-server --attach 9222
 
 Notes:
   - --profile-mode copy snapshots the profile (excluding cache dirs) so the
@@ -60,6 +66,7 @@ if (values.browser) process.env.BROWSER = values.browser;
 if (values.profile) process.env.PROFILE = values.profile;
 if (values['profile-mode']) process.env.PROFILE_MODE = values['profile-mode'];
 if (values['user-data-dir']) process.env.USER_DATA_DIR = values['user-data-dir'];
+if (values.attach) process.env.ATTACH = values.attach;
 
 console.log(`[session] workdir: ${workdir}`);
 

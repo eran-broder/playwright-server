@@ -11,18 +11,24 @@ import {
   ScreenshotResponse,
   ScreenshotsResponse,
   ResultResponse,
+  TraceStopResponse,
   PagesResponse,
 } from './pwhs/http';
 import { spawnServer } from './pwhs/spawn';
 import { BrowserKind, ProfileMode } from './profile-finder';
+import { SnapshotMode, WaitUntil } from './types';
+import type { SnapshotOptions } from './types';
+import type { ClockTime, TraceStartOptions } from './browser-manager';
 
-export { BrowserKind, ProfileMode };
+export { BrowserKind, ProfileMode, SnapshotMode, WaitUntil };
+export type { ClockTime, SnapshotOptions, TraceStartOptions };
 
 export interface StartServerOptions {
   browser?: BrowserKind;
   profile?: string;
   profileMode?: ProfileMode;
   userDataDir?: string;
+  attach?: string;
 }
 
 const buildServerFlags = (opts: StartServerOptions): string[] => {
@@ -31,7 +37,18 @@ const buildServerFlags = (opts: StartServerOptions): string[] => {
   if (opts.profile) flags.push('--profile', opts.profile);
   if (opts.profileMode) flags.push('--profile-mode', opts.profileMode);
   if (opts.userDataDir) flags.push('--user-data-dir', opts.userDataDir);
+  if (opts.attach) flags.push('--attach', opts.attach);
   return flags;
+};
+
+const snapshotQuery = (selector?: string, opts: SnapshotOptions = {}): string => {
+  const q = new URLSearchParams();
+  if (selector) q.set('selector', selector);
+  if (opts.mode) q.set('mode', opts.mode);
+  if (opts.boxes !== undefined) q.set('boxes', String(opts.boxes));
+  if (opts.depth !== undefined) q.set('depth', String(opts.depth));
+  const qs = q.toString();
+  return qs ? `/snapshot?${qs}` : '/snapshot';
 };
 
 export const startServer = async (opts: StartServerOptions = {}): Promise<PwhsClient> => {
@@ -71,8 +88,17 @@ export class PwhsClient {
     return this.post('/browser/restart', device ? { device } : {}, PassthroughResponse);
   }
 
-  nav(url: string) {
-    return this.post('/navigate', { url }, NavigateResponse);
+  nav(url: string, waitUntil?: WaitUntil) {
+    return this.post('/navigate', { url, ...(waitUntil ? { waitUntil } : {}) }, NavigateResponse);
+  }
+  back(waitUntil?: WaitUntil) {
+    return this.post('/back', waitUntil ? { waitUntil } : {}, NavigateResponse);
+  }
+  forward(waitUntil?: WaitUntil) {
+    return this.post('/forward', waitUntil ? { waitUntil } : {}, NavigateResponse);
+  }
+  reload(waitUntil?: WaitUntil) {
+    return this.post('/reload', waitUntil ? { waitUntil } : {}, NavigateResponse);
   }
   async url(): Promise<string> {
     return (await this.get('/url', UrlResponse)).url;
@@ -83,9 +109,11 @@ export class PwhsClient {
   async html(): Promise<string> {
     return (await this.get('/content', ContentResponse)).content;
   }
-  async snap(selector?: string): Promise<string> {
-    const apiPath = selector ? `/snapshot?selector=${encodeURIComponent(selector)}` : '/snapshot';
-    return (await this.get(apiPath, SnapshotResponse)).snapshot;
+  async snap(selector?: string, opts?: SnapshotOptions): Promise<string> {
+    return (await this.get(snapshotQuery(selector, opts), SnapshotResponse)).snapshot;
+  }
+  snapAi(selector?: string): Promise<string> {
+    return this.snap(selector, { mode: SnapshotMode.Ai });
   }
 
   click(selector: string) {
@@ -123,6 +151,25 @@ export class PwhsClient {
   }
   async play<T = unknown>(code: string): Promise<T> {
     return (await this.post('/script/execute-playwright', { code }, ResultResponse)).result as T;
+  }
+
+  async cdp<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
+    return (await this.post('/cdp', { method, params }, ResultResponse)).result as T;
+  }
+  traceStart(opts?: TraceStartOptions) {
+    return this.post('/trace/start', opts ?? {}, PassthroughResponse);
+  }
+  async traceStop(): Promise<string> {
+    return (await this.post('/trace/stop', {}, TraceStopResponse)).path;
+  }
+  clockInstall(time?: ClockTime) {
+    return this.post('/clock/install', time === undefined ? {} : { time }, PassthroughResponse);
+  }
+  clockSet(time: ClockTime) {
+    return this.post('/clock/set', { time }, PassthroughResponse);
+  }
+  clockFastForward(ticks: ClockTime) {
+    return this.post('/clock/fast-forward', { ticks }, PassthroughResponse);
   }
 
   poll(since = 0) {

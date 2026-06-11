@@ -20,6 +20,9 @@ export enum VerbName {
   Stop = 'stop',
   Restart = 'restart',
   Nav = 'nav',
+  Back = 'back',
+  Forward = 'forward',
+  Reload = 'reload',
   Url = 'url',
   Title = 'title',
   Html = 'html',
@@ -35,11 +38,25 @@ export enum VerbName {
   Shots = 'shots',
   Eval = 'eval',
   Play = 'play',
+  Cdp = 'cdp',
+  Trace = 'trace',
+  Clock = 'clock',
   Poll = 'poll',
   Check = 'check',
   Pages = 'pages',
   Switch = 'switch',
   Latest = 'latest',
+}
+
+enum TraceSub {
+  Start = 'start',
+  Stop = 'stop',
+}
+
+enum ClockSub {
+  Set = 'set',
+  Install = 'install',
+  Ff = 'ff',
 }
 
 const VERB_SET = new Set<string>(Object.values(VerbName));
@@ -60,6 +77,46 @@ interface VerbSpec<S extends z.ZodType> {
   requires?: number;
   expects?: string;
 }
+
+const flagValue = (args: string[], name: string): string | undefined => {
+  const match = args.find((a) => a.startsWith(`${name}=`));
+  return match?.slice(name.length + 1);
+};
+
+const snapPath = (args: string[]): string => {
+  const q = new URLSearchParams();
+  const selector = args.find((a) => !a.startsWith('--'));
+  if (selector) q.set('selector', selector);
+  if (args.includes('--ai')) q.set('mode', 'ai');
+  if (args.includes('--boxes')) q.set('boxes', 'true');
+  const depth = flagValue(args, '--depth');
+  if (depth) q.set('depth', depth);
+  const qs = q.toString();
+  return qs ? `/snapshot?${qs}` : '/snapshot';
+};
+
+const waitUntilBody = ([waitUntil]: string[]): unknown => (waitUntil ? { waitUntil } : {});
+
+const tracePath = ([sub]: string[]): string => {
+  if (sub === TraceSub.Start) return '/trace/start';
+  if (sub === TraceSub.Stop) return '/trace/stop';
+  throw new Error('pwhs trace <start|stop>');
+};
+
+const clockPath = ([sub]: string[]): string => {
+  if (sub === ClockSub.Set) return '/clock/set';
+  if (sub === ClockSub.Install) return '/clock/install';
+  if (sub === ClockSub.Ff) return '/clock/fast-forward';
+  throw new Error('pwhs clock <set|install|ff> [value]');
+};
+
+const coerceTime = (v: string): number | string => (/^\d+$/.test(v) ? Number(v) : v);
+
+const clockBody = ([sub, value]: string[]): unknown => {
+  if (sub === ClockSub.Install) return value ? { time: coerceTime(value) } : {};
+  if (value === undefined) throw new Error(`pwhs clock ${sub} <value>`);
+  return sub === ClockSub.Ff ? { ticks: coerceTime(value) } : { time: coerceTime(value) };
+};
 
 const defineVerb = <S extends z.ZodType>(spec: VerbSpec<S>): VerbRunner => ({
   run: async (port, args) => {
@@ -97,10 +154,31 @@ const VERBS: Record<VerbName, VerbRunner> = {
   [VerbName.Nav]: defineVerb({
     method: HttpMethod.Post,
     path: () => '/navigate',
-    body: ([url]) => ({ url }),
+    body: ([url, waitUntil]) => ({ url, ...(waitUntil ? { waitUntil } : {}) }),
     schema: NavigateResponse,
     requires: 1,
-    expects: '<url>',
+    expects: '<url> [waitUntil]',
+  }),
+  [VerbName.Back]: defineVerb({
+    method: HttpMethod.Post,
+    path: () => '/back',
+    body: waitUntilBody,
+    schema: NavigateResponse,
+    output: (r) => r.url,
+  }),
+  [VerbName.Forward]: defineVerb({
+    method: HttpMethod.Post,
+    path: () => '/forward',
+    body: waitUntilBody,
+    schema: NavigateResponse,
+    output: (r) => r.url,
+  }),
+  [VerbName.Reload]: defineVerb({
+    method: HttpMethod.Post,
+    path: () => '/reload',
+    body: waitUntilBody,
+    schema: NavigateResponse,
+    output: (r) => r.url,
   }),
   [VerbName.Url]: defineVerb({
     method: HttpMethod.Get,
@@ -122,7 +200,7 @@ const VERBS: Record<VerbName, VerbRunner> = {
   }),
   [VerbName.Snap]: defineVerb({
     method: HttpMethod.Get,
-    path: ([sel]) => (sel ? `/snapshot?selector=${encodeURIComponent(sel)}` : '/snapshot'),
+    path: snapPath,
     schema: SnapshotResponse,
     output: (r) => r.snapshot,
   }),
@@ -213,6 +291,32 @@ const VERBS: Record<VerbName, VerbRunner> = {
     output: (r) => r.result,
     requires: 1,
     expects: '<js>',
+  }),
+
+  [VerbName.Cdp]: defineVerb({
+    method: HttpMethod.Post,
+    path: () => '/cdp',
+    body: ([method, json]) => ({ method, ...(json ? { params: JSON.parse(json) } : {}) }),
+    schema: ResultResponse,
+    output: (r) => r.result,
+    requires: 1,
+    expects: '<method> [params-json]',
+  }),
+  [VerbName.Trace]: defineVerb({
+    method: HttpMethod.Post,
+    path: tracePath,
+    body: () => ({}),
+    schema: PassthroughResponse,
+    requires: 1,
+    expects: '<start|stop>',
+  }),
+  [VerbName.Clock]: defineVerb({
+    method: HttpMethod.Post,
+    path: clockPath,
+    body: clockBody,
+    schema: PassthroughResponse,
+    requires: 1,
+    expects: '<set|install|ff> [value]',
   }),
 
   [VerbName.Poll]: defineVerb({

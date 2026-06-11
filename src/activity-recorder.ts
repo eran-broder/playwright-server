@@ -10,10 +10,22 @@ import type {
   PageErrorEntry,
   NavigationEntry,
   DialogEntry,
+  DownloadEntry,
+  WebSocketEntry,
 } from './types';
+import { WebSocketEventType } from './types';
 
 const MAX_ENTRIES = 10000;
 const MAX_RESPONSE_BODY_SIZE = 1024 * 1024; // 1MB
+const MAX_WS_PAYLOAD_SIZE = 4 * 1024;
+
+const formatWsPayload = (payload: string | Buffer): string => {
+  if (Buffer.isBuffer(payload)) return `[binary: ${payload.length} bytes]`;
+  if (payload.length > MAX_WS_PAYLOAD_SIZE) {
+    return `${payload.slice(0, MAX_WS_PAYLOAD_SIZE)}…[truncated ${payload.length} chars]`;
+  }
+  return payload;
+};
 
 function isTextContent(contentType: string): boolean {
   return (
@@ -31,8 +43,15 @@ export class ActivityRecorder {
   private autoStart = true;
   private captureNetworkBodies = false;
   private requestTimings = new Map<string, number>();
+  private attachedPages = new WeakSet<Page>();
 
   attach(page: Page): void {
+    if (this.attachedPages.has(page)) {
+      if (this.autoStart) this.enabled = true;
+      return;
+    }
+    this.attachedPages.add(page);
+
     // Network events
     page.on('request', (request) => this.handleRequest(request));
     page.on('response', (response) => this.handleResponse(response));
@@ -55,6 +74,9 @@ export class ActivityRecorder {
 
     // Dialog events
     page.on('dialog', (dialog) => this.handleDialog(dialog));
+
+    page.on('download', (download) => this.handleDownload(download));
+    page.on('websocket', (ws) => this.handleWebSocket(ws));
 
     // Auto-start if configured
     if (this.autoStart) {
@@ -189,6 +211,27 @@ export class ActivityRecorder {
 
     // Auto-dismiss dialogs to prevent blocking
     await dialog.dismiss().catch(() => {});
+  }
+
+  private handleDownload(download: import('playwright').Download): void {
+    const entry: DownloadEntry = {
+      url: download.url(),
+      suggestedFilename: download.suggestedFilename(),
+    };
+    this.addEntry('download', entry);
+  }
+
+  private handleWebSocket(ws: import('playwright').WebSocket): void {
+    const wsEntry = (event: WebSocketEventType, payload?: string | Buffer): void => {
+      const entry: WebSocketEntry = { event, url: ws.url() };
+      if (payload !== undefined) entry.payload = formatWsPayload(payload);
+      this.addEntry('websocket', entry);
+    };
+
+    wsEntry(WebSocketEventType.Open);
+    ws.on('framesent', (frame) => wsEntry(WebSocketEventType.Sent, frame.payload));
+    ws.on('framereceived', (frame) => wsEntry(WebSocketEventType.Received, frame.payload));
+    ws.on('close', () => wsEntry(WebSocketEventType.Close));
   }
 
   // ============ Control Methods ============

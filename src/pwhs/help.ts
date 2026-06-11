@@ -12,12 +12,17 @@ Browser:
   pwhs stop                   POST /browser/stop
   pwhs restart [device]       POST /browser/restart
 
-Navigation:
-  pwhs nav <url>              POST /navigate
+Navigation (waitUntil: load|domcontentloaded|networkidle|commit):
+  pwhs nav <url> [waitUntil]  POST /navigate
+  pwhs back [waitUntil]       POST /back
+  pwhs forward [waitUntil]    POST /forward
+  pwhs reload [waitUntil]     POST /reload
   pwhs url                    GET /url
   pwhs title                  GET /title
   pwhs html                   GET /content
-  pwhs snap [selector]        GET /snapshot
+  pwhs snap [selector] [--ai] [--boxes] [--depth=N]
+                              GET /snapshot. --ai adds [ref=eN] element refs;
+                              act on them: pwhs click "aria-ref=eN"
 
 Interaction:
   pwhs click <selector>
@@ -35,6 +40,14 @@ Capture:
 Code execution:
   pwhs eval <js>              POST /execute/inline (page context)
   pwhs play <js>              POST /script/execute-playwright (Playwright API)
+  pwhs cdp <method> [json]    POST /cdp (raw CDP, e.g. pwhs cdp Browser.getVersion)
+
+Tracing & clock:
+  pwhs trace start            POST /trace/start
+  pwhs trace stop             POST /trace/stop, returns trace.zip path
+  pwhs clock set <time>       POST /clock/set (fixed Date.now)
+  pwhs clock install [time]   POST /clock/install
+  pwhs clock ff <ticks>       POST /clock/fast-forward
 
 Activity:
   pwhs poll [since]
