@@ -31,6 +31,10 @@ npm-debug.log*
 
 # Auth state (contains cookies/tokens)
 auth.json
+*cookies*.json
+
+# Traces (generated at runtime)
+traces/
 
 # Claude Code local settings
 .claude/
