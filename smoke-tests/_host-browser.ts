@@ -8,19 +8,20 @@ import { browserPid } from './_helpers';
 declare const chrome: {
   storage: { local: { set(items: Record<string, string>): Promise<void> } };
 };
+declare const pwhs: { mintCode(ttl: number | null | string, name?: string): Promise<string> };
 
 const { values } = parseArgs({
   options: {
     extension: { type: 'boolean', default: false },
-    token: { type: 'string' },
     label: { type: 'string', default: 'smoke' },
+    mint: { type: 'string' },
     'debug-port': { type: 'string' },
     url: { type: 'string', default: 'data:text/html,<title>host-tab</title><h1>host</h1>' },
   },
 });
 
 const extensionDir = path.resolve(__dirname, '..', 'extension');
-const withExtension = values.extension || values.token !== undefined;
+const withExtension = values.extension || values.mint !== undefined;
 const extensionArgs = withExtension
   ? [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`]
   : [];
@@ -31,11 +32,18 @@ const awaitWorker = async (ctx: import('playwright').BrowserContext): Promise<im
   return ctx.serviceWorkers()[0] ?? (await ctx.waitForEvent('serviceworker'));
 };
 
-const seedPairing = async (worker: import('playwright').Worker, token: string, label: string): Promise<void> => {
-  await worker.evaluate(
-    async (settings: Record<string, string>) => { await chrome.storage.local.set(settings); },
-    { token, label },
-  );
+const NEVER = 'never';
+
+const ttlOf = (mint: string): number | null | string => {
+  if (/^-?\d+$/.test(mint)) return Number(mint);
+  return mint === NEVER ? null : mint;
+};
+
+const seedProfile = async (worker: import('playwright').Worker, label: string, mint?: string): Promise<void> => {
+  await worker.evaluate(async (settings: Record<string, string>) => { await chrome.storage.local.set(settings); }, { label });
+  if (mint === undefined) return;
+  const code = await worker.evaluate((ttl: number | null | string) => pwhs.mintCode(ttl, 'smoke'), ttlOf(mint));
+  console.log(`PAIR_CODE=${code}`);
 };
 
 const main = async (): Promise<void> => {
@@ -46,7 +54,7 @@ const main = async (): Promise<void> => {
   });
   if (withExtension) {
     const worker = await awaitWorker(ctx);
-    if (values.token) await seedPairing(worker, values.token, values.label);
+    await seedProfile(worker, values.label, values.mint);
   }
   await ctx.pages()[0].goto(values.url);
   console.log(`BROWSER_PID=${await browserPid(ctx)}`);

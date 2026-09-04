@@ -13,7 +13,7 @@ import { ExtensionConnection } from './extension-connection';
 import { InstanceCatalog } from './instances';
 import { PlaywrightSession, SessionEvent } from './playwright-session';
 import { DataUrlStore } from './data-urls';
-import { pairUrl, servePairPage } from './pair-page';
+import type { KeyStore } from './keys';
 
 const EXTENSION_ORIGIN_PREFIX = 'chrome-extension://';
 const SESSION_KEY_BYTES = 16;
@@ -37,7 +37,7 @@ export class Relay {
   readonly instances = new InstanceCatalog();
   private readonly dataUrls = new DataUrlStore(() => `http://${RELAY_HOST}:${this.boundPort}`);
   private readonly http = createServer((req, res) => {
-    if (this.dataUrls.serve(req, res) || servePairPage(req, res)) return;
+    if (this.dataUrls.serve(req, res)) return;
     res.statusCode = 404;
     res.end();
   });
@@ -45,16 +45,12 @@ export class Relay {
   private readonly sessions = new Map<string, PlaywrightSession>();
   private boundPort = 0;
 
-  constructor(private readonly token: string) {
+  constructor(private readonly keys: KeyStore) {
     this.http.on('upgrade', (req, socket, head) => this.onUpgrade(req, socket, head));
   }
 
   get port(): number {
     return this.boundPort;
-  }
-
-  pairingUrl(label: string): string {
-    return pairUrl(`http://${RELAY_HOST}:${this.boundPort}`, label, this.token);
   }
 
   async listen(): Promise<number> {
@@ -115,14 +111,15 @@ export class Relay {
   }
 
   private async acceptExtension(ws: WebSocket): Promise<void> {
-    const instance = await authenticateExtension(ws, this.token);
-    const connection = new ExtensionConnection(ws, instance);
+    const { instance, ...auth } = await authenticateExtension(ws, this.keys);
+    const connection = new ExtensionConnection(ws, instance, auth);
     const worker = new Date(instance.workerStartedAt).toISOString();
     if (!this.instances.add(connection)) {
       console.log(`[relay] duplicate connection rejected: ${connection.label} (worker ${worker})`);
       return;
     }
-    console.log(`[relay] extension connected: ${connection.label} (${instance.brand} ${instance.version}, worker ${worker})`);
+    const state = auth.authenticated ? `authenticated with code ${auth.codeId}` : `locked (${auth.lockReason})`;
+    console.log(`[relay] extension connected: ${connection.label} (${instance.brand} ${instance.version}, ${state})`);
     ws.once('close', (code, reason) => console.log(`[relay] extension socket closed: ${connection.label} code=${code} ${reason.toString()}`));
   }
 }

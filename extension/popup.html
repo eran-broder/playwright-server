@@ -4,28 +4,75 @@
     <meta charset="utf-8" />
     <title>pwhs bridge</title>
     <style>
-      body { font: 13px system-ui, sans-serif; width: 280px; margin: 0; padding: 12px; color: #222; }
-      h1 { font-size: 14px; margin: 0 0 10px; }
-      label { display: block; margin: 8px 0 3px; color: #555; }
-      input { width: 100%; box-sizing: border-box; padding: 5px 6px; font: inherit; }
-      .row { display: flex; gap: 6px; margin-top: 10px; }
-      button { flex: 1; padding: 6px; font: inherit; cursor: pointer; }
-      #status { margin-top: 10px; padding: 8px; background: #f4f4f4; border-radius: 4px; white-space: pre-line; }
-      #id { color: #888; font-size: 11px; margin-top: 6px; word-break: break-all; }
+      :root { color-scheme: light dark; --fg: #1f2937; --muted: #6b7280; --bg: #ffffff; --card: #f3f4f6; --line: #e5e7eb; --accent: #0ea5e9; --ok: #16a34a; --warn: #d97706; --danger: #dc2626; }
+      @media (prefers-color-scheme: dark) { :root { --fg: #e5e7eb; --muted: #9ca3af; --bg: #111827; --card: #1f2937; --line: #374151; } }
+      body { font: 13px/1.4 system-ui, sans-serif; width: 340px; margin: 0; padding: 14px; color: var(--fg); background: var(--bg); }
+      header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+      header img { width: 32px; height: 32px; border-radius: 8px; }
+      header h1 { font-size: 15px; margin: 0; }
+      header .sub { color: var(--muted); font-size: 12px; }
+      .label-row { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
+      .label-row input { flex: 1; padding: 5px 7px; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+      .status { padding: 8px 10px; border-radius: 8px; background: var(--card); margin-bottom: 12px; }
+      .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+      .status .dot.ok { background: var(--ok); } .status .dot.warn { background: var(--warn); }
+      .status .line { margin: 2px 0; }
+      h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 12px 0 6px; }
+      table { width: 100%; border-collapse: collapse; }
+      td { padding: 5px 4px; border-top: 1px solid var(--line); vertical-align: top; }
+      td.meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+      td.actions { text-align: right; white-space: nowrap; }
+      button { font: inherit; padding: 5px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.small { padding: 2px 7px; font-size: 12px; }
+      button.danger { color: var(--danger); }
+      .mint { display: flex; gap: 6px; margin-top: 8px; }
+      .mint input { flex: 1; padding: 5px 7px; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+      .mint select { font: inherit; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+      .minted { margin-top: 10px; padding: 10px; border-radius: 8px; background: var(--card); border: 1px dashed var(--accent); }
+      .minted code { display: block; font: 12px/1.5 ui-monospace, monospace; word-break: break-all; margin: 6px 0; user-select: all; }
+      .minted .hint { color: var(--muted); font-size: 11px; }
+      .empty { color: var(--muted); padding: 6px 4px; }
+      .footer { display: flex; justify-content: space-between; margin-top: 12px; }
+      .id { color: var(--muted); font-size: 11px; word-break: break-all; }
     </style>
   </head>
   <body>
-    <h1>pwhs bridge</h1>
-    <label for="label">Profile label</label>
-    <input id="label" placeholder="e.g. Work" />
-    <label for="token">Pairing token (from <code>pwhs token</code>)</label>
-    <input id="token" type="password" placeholder="paste token" />
-    <div class="row">
-      <button id="save">Save</button>
-      <button id="connect">Connect now</button>
+    <header>
+      <img src="icons/icon-48.png" alt="" />
+      <div>
+        <h1>pwhs bridge</h1>
+        <div class="sub" id="browser">…</div>
+      </div>
+    </header>
+
+    <div class="label-row">
+      <input id="label" placeholder="Profile label, e.g. Work" />
+      <button id="save-label" class="small">Rename</button>
     </div>
-    <div id="status">…</div>
-    <div id="id"></div>
+
+    <div class="status" id="status">…</div>
+
+    <h2>Pair codes</h2>
+    <table><tbody id="codes"></tbody></table>
+    <div class="mint">
+      <input id="code-name" placeholder="name (optional)" />
+      <select id="code-ttl">
+        <option value="hour">1 hour</option>
+        <option value="day" selected>24 hours</option>
+        <option value="week">7 days</option>
+        <option value="month">30 days</option>
+        <option value="never">no expiry</option>
+      </select>
+      <button id="mint" class="primary">New code</button>
+    </div>
+    <div id="minted" hidden></div>
+
+    <div class="footer">
+      <button id="connect" class="small">Connect now</button>
+      <button id="revoke-all" class="small danger">Revoke all</button>
+    </div>
+    <div class="id" id="profile-id"></div>
     <script type="module" src="dist/popup.js"></script>
   </body>
 </html>

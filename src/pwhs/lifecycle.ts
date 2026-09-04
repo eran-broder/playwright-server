@@ -1,5 +1,5 @@
 import { list as listSessions } from '../session-registry';
-import { loadOrCreateToken } from '../relay/token';
+import { assertLive, resolveKey } from '../relay/keys';
 import { resolvePort } from './resolve';
 import { spawnServer } from './spawn';
 
@@ -7,23 +7,27 @@ export enum LifecycleVerb {
   Up = 'up',
   Down = 'down',
   Ls = 'ls',
-  Token = 'token',
-  Pair = 'pair',
+  Keys = 'keys',
 }
 
 const EXTENSION_FLAG = '--extension';
+const PAIR_FLAG = '--pair';
 const ALL_FLAG = '--all';
 
+const pairCodesIn = (flags: string[]): string[] =>
+  flags.flatMap((f, i) => (f === PAIR_FLAG && flags[i + 1] ? [flags[i + 1]] : []));
+
+const validatePairCodes = (flags: string[]): Promise<void> =>
+  Promise.all(pairCodesIn(flags).map((code) => resolveKey({ code, name: 'inline', addedAt: Date.now() }).then(assertLive)))
+    .then(() => undefined);
+
 export const up = async (serverFlags: string[]): Promise<void> => {
+  await validatePairCodes(serverFlags);
   if (serverFlags.includes(EXTENSION_FLAG)) {
-    process.stderr.write('waiting for the pwhs extension to connect (click its icon to connect now)…\n');
+    process.stderr.write('waiting for the pwhs extension to connect (it searches every few seconds; click its icon to connect now)…\n');
   }
   const { port } = await spawnServer(serverFlags);
   process.stdout.write(`${port}\n`);
-};
-
-export const token = (): void => {
-  process.stdout.write(`${loadOrCreateToken()}\n`);
 };
 
 const formatAge = (ms: number): string => {

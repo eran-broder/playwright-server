@@ -7,11 +7,13 @@ import { register, unregister } from './session-registry';
 import { parseBrowser, parseProfileMode } from './profile-finder';
 import { parseViewportMode } from './viewport';
 import { Relay } from './relay/relay';
-import { loadOrCreateToken } from './relay/token';
+import { KeyStore } from './relay/keys';
+import { parsePairCode } from './extension/pair-code';
 import type { ServerConfig } from './types';
 
 const DEFAULT_PORT = 3456;
 const ENV_TRUE = '1';
+const PAIR_ENV = 'PWHS_PAIR_CODES';
 
 const config: ServerConfig = {
   port: parseInt(process.env.PORT || String(DEFAULT_PORT)),
@@ -23,9 +25,15 @@ const config: ServerConfig = {
 const envNumber = (name: string): number | undefined =>
   process.env[name] ? Number(process.env[name]) : undefined;
 
-const startupOptionsFromEnv = (): StartOptions => ({
+const inlinePairCodes = (): string[] =>
+  (process.env[PAIR_ENV] ?? '').split(',').map((c) => c.trim()).filter(Boolean);
+
+const defaultProfile = (codes: string[]): string | undefined =>
+  codes.length > 0 ? parsePairCode(codes[0]).profileShort : undefined;
+
+const startupOptionsFromEnv = (codes: string[]): StartOptions => ({
   browser: process.env.BROWSER ? parseBrowser(process.env.BROWSER) : undefined,
-  profile: process.env.PROFILE || undefined,
+  profile: process.env.PROFILE || defaultProfile(codes),
   profileMode: process.env.PROFILE_MODE ? parseProfileMode(process.env.PROFILE_MODE) : undefined,
   userDataDir: process.env.USER_DATA_DIR || undefined,
   attach: process.env.ATTACH || undefined,
@@ -35,11 +43,12 @@ const startupOptionsFromEnv = (): StartOptions => ({
   tab: envNumber('TAB'),
 });
 
-const startRelay = async (startup: StartOptions): Promise<Relay | null> => {
+const startRelay = async (startup: StartOptions, codes: string[]): Promise<Relay | null> => {
   if (!startup.extension) return null;
-  const relay = new Relay(loadOrCreateToken());
+  const keys = await KeyStore.load(codes);
+  const relay = new Relay(keys);
   const port = await relay.listen();
-  console.log(`[relay] listening on ${port}; waiting for the pwhs extension (profile: ${startup.profile ?? 'any'})`);
+  console.log(`[relay] listening on ${port} with ${keys.list().length} key(s); waiting for extension profile ${startup.profile ?? '(any)'}`);
   return relay;
 };
 
@@ -54,8 +63,9 @@ const installCleanup = (relay: Relay | null): void => {
 };
 
 const main = async (): Promise<void> => {
-  const startup = startupOptionsFromEnv();
-  const relay = await startRelay(startup);
+  const codes = inlinePairCodes();
+  const startup = startupOptionsFromEnv(codes);
+  const relay = await startRelay(startup, codes);
   const services = createServices(config, relay);
   const app = createApp(services);
 

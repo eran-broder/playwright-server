@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { WindowInfo } from '../extension/protocol';
+import { LockReason, WindowInfo } from '../extension/protocol';
 
 export enum HttpMethod {
   Get = 'GET',
@@ -10,7 +10,10 @@ const SuccessBase = z.object({ success: z.boolean() });
 
 export const ProfileInfo = z.object({
   id: z.string(),
+  shortId: z.string(),
   label: z.string(),
+  authenticated: z.boolean(),
+  lockReason: z.enum(LockReason).nullable(),
   brand: z.string(),
   version: z.string(),
   windows: z.array(WindowInfo),

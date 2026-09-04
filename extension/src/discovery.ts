@@ -2,11 +2,11 @@ import { ExtensionEvent, PayloadOf, relayPortCandidates } from '../../src/extens
 import { DebuggerHub } from './debugger-hub';
 import { createHandlers } from './handlers';
 import { describeInstance } from './instance-info';
-import { RelayClient } from './relay-client';
-import { ensureInstanceId, loadSettings } from './settings';
+import { ClientState, RelayClient } from './relay-client';
+import { ensureProfileId, loadSettings } from './settings';
 
-export interface ConnectionStatus {
-  port: number;
+export interface ConnectionStatus extends ClientState {
+  attachedTabs: number;
 }
 
 export class Discovery {
@@ -23,7 +23,9 @@ export class Discovery {
   }
 
   status(): ConnectionStatus[] {
-    return [...this.clients.keys()].sort((a, b) => a - b).map((port) => ({ port }));
+    return [...this.clients.values()]
+      .sort((a, b) => a.port - b.port)
+      .map((client) => ({ ...client.state, attachedTabs: this.hub.tabsHeldBy(client).length }));
   }
 
   broadcast<E extends ExtensionEvent>(event: E, payload: PayloadOf<E>): void {
@@ -38,17 +40,16 @@ export class Discovery {
 
   private async probe(): Promise<void> {
     const settings = await loadSettings();
-    if (!settings.token) return;
-    const instance = await describeInstance(await ensureInstanceId(), settings.label);
+    const instance = await describeInstance(await ensureProfileId(), settings.label);
     const open = relayPortCandidates().filter((port) => !this.clients.has(port));
-    await Promise.all(open.map((port) => this.tryConnect(port, settings.token, instance)));
+    await Promise.all(open.map((port) => this.tryConnect(port, instance)));
   }
 
-  private async tryConnect(port: number, token: string, instance: Awaited<ReturnType<typeof describeInstance>>): Promise<void> {
+  private async tryConnect(port: number, instance: Awaited<ReturnType<typeof describeInstance>>): Promise<void> {
     try {
-      const client = await RelayClient.connect(port, token, instance, (c) => createHandlers(this.hub, c));
+      const client = await RelayClient.connect(port, instance, (c) => createHandlers(this.hub, c));
       this.clients.set(port, client);
-      console.log(`[pwhs] ${new Date().toISOString()} connected to relay ${port}`);
+      console.log(`[pwhs] ${new Date().toISOString()} relay ${port}: ${client.authenticated ? 'authenticated' : `locked (${client.lockReason})`}`);
       client.onClose((code, reason) => {
         console.log(`[pwhs] ${new Date().toISOString()} relay ${port} closed code=${code} ${reason}`);
         if (this.clients.get(port) === client) this.clients.delete(port);

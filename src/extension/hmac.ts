@@ -9,14 +9,17 @@ const toHex = (bytes: Uint8Array): string =>
 export const randomNonce = (): string =>
   toHex(crypto.getRandomValues(new Uint8Array(NONCE_BYTES)));
 
+export const digestHex = async (text: string): Promise<string> =>
+  toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(text))));
+
 export const computeProof = async (
-  token: string,
+  secret: string,
   nonce: string,
   role: HandshakeRole,
 ): Promise<string> => {
   const key = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(token),
+    encoder.encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],

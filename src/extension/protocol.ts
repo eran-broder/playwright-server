@@ -5,10 +5,8 @@ export const RELAY_PORT_COUNT = 10;
 export const RELAY_HOST = '127.0.0.1';
 export const EXTENSION_PATH = '/extension';
 export const PLAYWRIGHT_PATH_PREFIX = '/playwright/';
-export const PAIR_PATH = '/pair';
-export const PAIR_STATUS_ID = 'pwhs-pair-status';
-export const PAIR_PAIRED_ATTRIBUTE = 'data-pwhs-paired';
 export const KEEPALIVE_INTERVAL_MS = 20_000;
+export const PROBE_INTERVAL_MS = 5_000;
 
 export const relayPortCandidates = (): number[] =>
   Array.from({ length: RELAY_PORT_COUNT }, (_, i) => RELAY_PORT_BASE + i);
@@ -22,6 +20,8 @@ export enum HandshakeRole {
 }
 
 export enum MessageType {
+  Hello = 'hello',
+  Locked = 'locked',
   ServerChallenge = 'server-challenge',
   ExtensionChallenge = 'extension-challenge',
   ServerProof = 'server-proof',
@@ -43,10 +43,30 @@ export const InstanceInfo = z.object({
 });
 export type InstanceInfo = z.infer<typeof InstanceInfo>;
 
+export const HelloMessage = z.object({
+  type: z.literal(MessageType.Hello),
+  instance: InstanceInfo,
+  codeIds: z.array(z.string()),
+});
+export type HelloMessage = z.infer<typeof HelloMessage>;
+
+export enum LockReason {
+  NoKey = 'no-key',
+  Expired = 'expired',
+}
+
+export const LockedMessage = z.object({
+  type: z.literal(MessageType.Locked),
+  reason: z.enum(LockReason),
+});
+
 export const ServerChallenge = z.object({
   type: z.literal(MessageType.ServerChallenge),
   nonce: z.string().min(1),
+  codeId: z.string().min(1),
 });
+
+export const ServerOpening = z.discriminatedUnion('type', [LockedMessage, ServerChallenge]);
 export const ExtensionChallenge = z.object({
   type: z.literal(MessageType.ExtensionChallenge),
   nonce: z.string().min(1),
@@ -58,7 +78,6 @@ export const ServerProof = z.object({
 export const ExtensionProof = z.object({
   type: z.literal(MessageType.ExtensionProof),
   proof: z.string().min(1),
-  instance: InstanceInfo,
 });
 
 export const TabInfo = z.object({

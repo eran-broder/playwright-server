@@ -2,13 +2,26 @@ import { z } from 'zod';
 import {
   HandshakeRole,
   InstanceInfo,
+  LockReason,
   MessageType,
-  ServerChallenge,
+  ServerOpening,
   ServerProof,
 } from '../../src/extension/protocol';
+import { parsePairCode } from '../../src/extension/pair-code';
 import { computeProof, proofsMatch, randomNonce } from '../../src/extension/hmac';
+import { findLiveCode, listCodes, markUsed } from './codes';
 
 const HANDSHAKE_TIMEOUT_MS = 5_000;
+
+export enum HandshakeOutcome {
+  Authenticated = 'authenticated',
+  Locked = 'locked',
+}
+
+export interface HandshakeResult {
+  outcome: HandshakeOutcome;
+  reason?: LockReason;
+}
 
 export const nextMessage = <S extends z.ZodType>(
   ws: WebSocket,
@@ -37,21 +50,29 @@ export const nextMessage = <S extends z.ZodType>(
     ws.addEventListener('close', onClose);
   });
 
-export const authenticateWithServer = async (
-  ws: WebSocket,
-  token: string,
-  instance: InstanceInfo,
-): Promise<void> => {
-  const serverChallenge = await nextMessage(ws, ServerChallenge);
-  const nonce = randomNonce();
-  ws.send(JSON.stringify({ type: MessageType.ExtensionChallenge, nonce }));
+const send = (ws: WebSocket, message: unknown): void => ws.send(JSON.stringify(message));
 
-  const serverProof = await nextMessage(ws, ServerProof);
-  const expected = await computeProof(token, nonce, HandshakeRole.Server);
-  if (!proofsMatch(expected, serverProof.proof)) {
-    throw new Error('Server failed token verification');
+export const authenticateWithServer = async (ws: WebSocket, instance: InstanceInfo): Promise<HandshakeResult> => {
+  const codeIds = (await listCodes()).map((c) => c.id);
+  send(ws, { type: MessageType.Hello, instance, codeIds });
+
+  const opening = await nextMessage(ws, ServerOpening);
+  if (opening.type === MessageType.Locked) {
+    return { outcome: HandshakeOutcome.Locked, reason: opening.reason };
   }
 
-  const proof = await computeProof(token, serverChallenge.nonce, HandshakeRole.Extension);
-  ws.send(JSON.stringify({ type: MessageType.ExtensionProof, proof, instance }));
+  const record = await findLiveCode(opening.codeId);
+  if (!record) throw new Error(`Server asked for unknown or expired code ${opening.codeId}`);
+  const { secret } = parsePairCode(record.code);
+
+  const nonce = randomNonce();
+  send(ws, { type: MessageType.ExtensionChallenge, nonce });
+  const serverProof = await nextMessage(ws, ServerProof);
+  if (!proofsMatch(await computeProof(secret, nonce, HandshakeRole.Server), serverProof.proof)) {
+    throw new Error('Server failed code verification');
+  }
+
+  send(ws, { type: MessageType.ExtensionProof, proof: await computeProof(secret, opening.nonce, HandshakeRole.Extension) });
+  await markUsed(record.id);
+  return { outcome: HandshakeOutcome.Authenticated };
 };

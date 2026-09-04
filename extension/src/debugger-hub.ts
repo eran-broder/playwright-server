@@ -40,9 +40,12 @@ export class DebuggerHub {
     await chrome.debugger.detach({ tabId }).catch(() => undefined);
   }
 
+  tabsHeldBy(holder: Holder): number[] {
+    return [...this.holders].filter(([, set]) => set.has(holder)).map(([tabId]) => tabId);
+  }
+
   async releaseAll(holder: Holder): Promise<void> {
-    const held = [...this.holders].filter(([, set]) => set.has(holder)).map(([tabId]) => tabId);
-    await Promise.all(held.map((tabId) => this.detach(holder, tabId)));
+    await Promise.all(this.tabsHeldBy(holder).map((tabId) => this.detach(holder, tabId)));
   }
 
   send(tabId: number, sessionId: string | undefined, method: string, params?: Record<string, unknown>): Promise<unknown> {

@@ -13,6 +13,8 @@ import {
   ResultOf,
 } from '../extension/protocol';
 import { parseJson, sendJson } from './ws-utils';
+import type { Authentication } from './handshake';
+import { profileShortOf } from '../extension/pair-code';
 
 const CALL_TIMEOUT_MS = 30_000;
 const LIVENESS_INTERVAL_MS = 15_000;
@@ -33,6 +35,7 @@ export class ExtensionConnection {
   constructor(
     private readonly ws: WebSocket,
     readonly instance: InstanceInfo,
+    readonly auth: Authentication,
   ) {
     ws.on('message', (data) => this.onMessage(data));
     ws.on('pong', () => { this.awaitingPong = false; });
@@ -41,10 +44,19 @@ export class ExtensionConnection {
   }
 
   get label(): string {
-    return this.instance.label || `${this.instance.brand.toLowerCase()}-${this.instance.id.slice(0, 6)}`;
+    return this.instance.label || `${this.instance.brand.toLowerCase()}-${this.shortId.toLowerCase()}`;
+  }
+
+  get shortId(): string {
+    return profileShortOf(this.instance.id);
+  }
+
+  get authenticated(): boolean {
+    return this.auth.authenticated;
   }
 
   async call<M extends ExtensionMethod>(method: M, params: ParamsOf<M>): Promise<ResultOf<M>> {
+    if (!this.authenticated) throw new Error(`Profile ${this.label} is locked (${this.auth.lockReason})`);
     const id = this.nextId++;
     const raw = await new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {

@@ -2,15 +2,14 @@ export const HELP = `Usage: pwhs <verb> [args] [-p <port>]
 
 Lifecycle:
   pwhs up [server-flags]      Start a server, print its port to stdout
-                              e.g. pwhs up --extension --profile Work
+                              e.g. pwhs up --extension --pair <code>
+                              or   pwhs up --extension --profile Work (stored key)
   pwhs down [-p <port>]       Stop the server on <port>
   pwhs down --all             Stop every running server
   pwhs ls                     List running servers (pruned to live pids)
-  pwhs pair [--label L] [--no-open]
-                              Pair the browser extension hands-free: opens a
-                              local page in your default browser, the extension
-                              picks up the token, and pwhs confirms.
-  pwhs token                  Print the pairing token (manual pairing via popup)
+  pwhs keys add <code> [name] Store a pair code minted in the extension popup
+  pwhs keys ls                List stored keys with profile and expiry
+  pwhs keys rm <id>           Remove a stored key
 
 Browser:
   pwhs status                 GET /status
@@ -69,7 +68,7 @@ Multi-tab:
   pwhs switch <index>
   pwhs latest
 
-Port selection (every verb except up/ls/token):
+Port selection (every verb except up/ls/keys):
   --port <n> / -p <n>     Per-call override.
   $PWHS_PORT              Sticky session for the shell.
   Caller cwd              Server launched from your cwd (or an ancestor of it);

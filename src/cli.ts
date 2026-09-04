@@ -15,6 +15,7 @@ const { values } = parseArgs({
     'user-data-dir': { type: 'string' },
     attach: { type: 'string' },
     extension: { type: 'boolean' },
+    pair: { type: 'string', multiple: true },
     window: { type: 'string' },
     tab: { type: 'string' },
     viewport: { type: 'string' },
@@ -42,7 +43,11 @@ Options:
                              (DevToolsActivePort of Chrome/Edge, then :9222).
   --extension                Drive a normal browser through the pwhs bridge
                              extension. No launch flags, no debug port, real
-                             profile. Pair once with the token from 'pwhs token'.
+                             profile. Unlock it with a pair code minted in the
+                             extension popup (--pair), or keys added via
+                             'pwhs keys add'.
+  --pair <code>              Extension mode: pair code for the profile to drive
+                             (repeatable). Its profile becomes the default.
   --window <id>              Extension mode: adopt this window's active tab.
   --tab <id>                 Extension mode: adopt exactly this tab.
   --viewport <mode>          emulated: fixed 1280x720 viewport (default when
@@ -56,8 +61,8 @@ Examples:
   playwright-http-server --browser chrome --profile "Profile 1" --profile-mode live
   playwright-http-server --user-data-dir ./my-profile
   playwright-http-server --attach auto
-  playwright-http-server --extension --profile Work
-  playwright-http-server --extension --tab 1234
+  playwright-http-server --extension --pair pwhs1-XXXXXXXX-...
+  playwright-http-server --extension --profile Work --tab 1234
 
 Notes:
   - --profile-mode copy snapshots the profile (excluding cache dirs) so the
@@ -65,8 +70,8 @@ Notes:
     so cookie/login SQLite files aren't locked during the copy.
   - --profile-mode live launches on the real path. Source browser must be
     fully closed; automation changes will persist back to your real profile.
-  - --extension waits for a paired browser profile to connect; click the
-    extension icon to connect immediately.`;
+  - --extension waits for a paired browser profile to connect; the extension
+    searches for servers every few seconds, or click its icon to connect now.`;
 
 if (values.help) {
   console.log(HELP);
@@ -74,7 +79,7 @@ if (values.help) {
 }
 
 const LAUNCH_ONLY_FLAGS = ['browser', 'profile-mode', 'user-data-dir', 'attach'] as const;
-const EXTENSION_ONLY_FLAGS = ['window', 'tab'] as const;
+const EXTENSION_ONLY_FLAGS = ['window', 'tab', 'pair'] as const;
 
 const rejectConflicts = (): void => {
   if (values.extension) {
@@ -103,6 +108,7 @@ const ENV_FROM_FLAG: Record<string, string | undefined> = {
   USER_DATA_DIR: values['user-data-dir'],
   ATTACH: values.attach,
   EXTENSION: values.extension ? '1' : undefined,
+  PWHS_PAIR_CODES: values.pair?.join(',') ,
   WINDOW: values.window,
   TAB: values.tab,
   VIEWPORT: values.viewport,

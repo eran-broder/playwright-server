@@ -34,9 +34,10 @@ export interface StartServerOptions extends BrowserStartOptions {
   userDataDir?: string;
   attach?: string;
   extension?: boolean;
+  pair?: string | string[];
 }
 
-const FLAG_NAMES: Record<Exclude<keyof StartServerOptions, 'extension' | 'device'>, string> = {
+const FLAG_NAMES: Record<Exclude<keyof StartServerOptions, 'extension' | 'device' | 'pair'>, string> = {
   browser: '--browser',
   profile: '--profile',
   profileMode: '--profile-mode',
@@ -51,7 +52,8 @@ const buildServerFlags = (opts: StartServerOptions): string[] => {
   const valued = (Object.entries(FLAG_NAMES) as Array<[keyof typeof FLAG_NAMES, string]>)
     .filter(([key]) => opts[key] !== undefined)
     .flatMap(([key, flag]) => [flag, String(opts[key])]);
-  return opts.extension ? [...valued, '--extension'] : valued;
+  const pairs = [opts.pair ?? []].flat().flatMap((code) => ['--pair', code]);
+  return opts.extension ? [...valued, ...pairs, '--extension'] : valued;
 };
 
 const snapshotQuery = (selector?: string, opts: SnapshotOptions = {}): string => {

@@ -1,9 +1,19 @@
 import { z } from 'zod';
 
+export const PairCodeRecord = z.object({
+  id: z.string(),
+  name: z.string(),
+  code: z.string(),
+  createdAt: z.number(),
+  expiresAt: z.number().nullable(),
+  lastUsedAt: z.number().nullable(),
+});
+export type PairCodeRecord = z.infer<typeof PairCodeRecord>;
+
 export const Settings = z.object({
-  token: z.string().default(''),
+  profileId: z.string().default(''),
   label: z.string().default(''),
-  instanceId: z.string().default(''),
+  codes: z.array(PairCodeRecord).default([]),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -15,22 +25,22 @@ export const loadSettings = async (): Promise<Settings> =>
 export const saveSettings = (patch: Partial<Settings>): Promise<void> =>
   chrome.storage.local.set(patch);
 
-const createInstanceId = async (): Promise<string> => {
+const createProfileId = async (): Promise<string> => {
   const settings = await loadSettings();
-  if (settings.instanceId) return settings.instanceId;
-  const instanceId = crypto.randomUUID();
-  await saveSettings({ instanceId });
-  return instanceId;
+  if (settings.profileId) return settings.profileId;
+  const profileId = crypto.randomUUID();
+  await saveSettings({ profileId });
+  return profileId;
 };
 
-let instanceIdPromise: Promise<string> | null = null;
+let profileIdPromise: Promise<string> | null = null;
 
-export const ensureInstanceId = (): Promise<string> => {
-  instanceIdPromise ??= createInstanceId();
-  return instanceIdPromise;
+export const ensureProfileId = (): Promise<string> => {
+  profileIdPromise ??= createProfileId();
+  return profileIdPromise;
 };
 
-export const PAIRING_KEYS: ReadonlyArray<keyof Settings> = ['token', 'label'];
+export const PAIRING_KEYS: ReadonlyArray<keyof Settings> = ['label', 'codes'];
 
 export const affectsPairing = (changes: Record<string, unknown>): boolean =>
   PAIRING_KEYS.some((key) => key in changes);

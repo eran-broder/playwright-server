@@ -11,12 +11,18 @@ const requireRelay = (s: Services): Relay => {
   return s.relay;
 };
 
+const windowsOf = async (instance: ExtensionConnection) =>
+  instance.authenticated ? (await instance.call(ExtensionMethod.Catalog, {})).windows : [];
+
 const describeProfile = async (instance: ExtensionConnection) => ({
   id: instance.instance.id,
+  shortId: instance.shortId,
   label: instance.label,
   brand: instance.instance.brand,
   version: instance.instance.version,
-  windows: (await instance.call(ExtensionMethod.Catalog, {})).windows,
+  authenticated: instance.authenticated,
+  lockReason: instance.auth.lockReason ?? null,
+  windows: await windowsOf(instance),
 });
 
 export const browserRoutes = (s: Services): Router => {

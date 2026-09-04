@@ -1,30 +1,33 @@
 #!/usr/bin/env bash
 source "$(dirname "${BASH_SOURCE[0]}")/_helpers.sh"
 
-section "hands-free pairing via pwhs pair"
-PAIR_LOG=$(mktemp)
-$PWHS pair --label smoke --no-open > "$PAIR_LOG" 2>&1 &
-PAIR_PID=$!
-until grep -q "http://127.0.0.1" "$PAIR_LOG"; do sleep 0.2; done
-PAIR_URL=$(grep -oE "http://127.0.0.1:[0-9]+/pair[^ ]*" "$PAIR_LOG" | head -1)
-echo "pair url: $PAIR_URL"
-start_host_browser --extension --url "$PAIR_URL"
-wait $PAIR_PID || true
-assert_contains "pwhs pair confirms the pairing" 'Paired "smoke"' cat "$PAIR_LOG"
-rm -f "$PAIR_LOG"
-section "pwhs up --extension"
-PORT=$($PWHS up --extension --profile smoke)
+section "host browser with the pwhs extension, minting a pair code"
+start_host_browser --extension --label smoke --mint day
+CODE=$(grep -oE 'PAIR_CODE=.*' "$HOST_LOG" | head -1 | cut -d= -f2)
+echo "pair code: $CODE"
+assert_contains "code has the pwhs1 prefix" "pwhs1-" echo "$CODE"
+
+section "pwhs keys store"
+assert_contains "keys add stores the code" "Stored key" $PWHS keys add "$CODE" smoke-test
+assert_contains "keys ls shows it" "smoke-test" $PWHS keys ls
+KEY_ID=$($PWHS keys ls | grep smoke-test | cut -d' ' -f1)
+assert_contains "keys rm removes it" "Removed 1" $PWHS keys rm "$KEY_ID"
+assert_fails_with "expired code is rejected before spawning" "expired" $PWHS up --extension --pair "pwhs1-DEADBEEF-1-ABCDEFGHJKMNPQRSTVWXYZ0123"
+assert_fails_with "malformed code is rejected" "Malformed" $PWHS up --extension --pair "nope"
+
+section "pwhs up --extension --pair <code>"
+PORT=$($PWHS up --extension --pair "$CODE")
 export PWHS_PORT=$PORT
 SERVER_LOG=$($PWHS status | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).logFile))")
 echo "server log: $SERVER_LOG"
 assert_contains "status reports extension mode" '"mode": "extension"' $PWHS status
 assert_contains "status reports the profile" '"profile": "smoke"' $PWHS status
-assert_contains "adopts the active tab" "pwhs pairing" $PWHS title
+assert_contains "adopts the active tab" "host-tab" $PWHS title
 
 section "profiles catalog"
 assert_contains "profiles lists the paired label" '"label": "smoke"' $PWHS profiles
-assert_contains "profiles lists the active tab" "pwhs pairing" $PWHS profiles
-
+assert_contains "profiles shows it authenticated" '"authenticated": true' $PWHS profiles
+assert_contains "profiles lists the active tab" "host-tab" $PWHS profiles
 PAGE='data:text/html,<title>refs-page</title><button onclick="this.textContent=String(99)">press</button><a href="data:text/plain,hi" download="hi.txt">save</a>'
 section "navigate, ai snapshot, click by ref, eval"
 $PWHS nav "$PAGE" >/dev/null

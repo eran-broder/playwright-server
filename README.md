@@ -21,7 +21,7 @@ Three ways to drive it:
 playwright-http-server                                          # ephemeral chromium
 playwright-http-server --browser edge --profile Default         # your real Edge profile
 playwright-http-server --attach auto                            # attach to a browser you already have open
-playwright-http-server --extension --profile Work               # drive your normal browser via the pwhs bridge extension
+playwright-http-server --extension --pair <code>                # drive your normal browser via the pwhs bridge extension
 playwright-http-server --port 3456 --dir ./mySession            # pinned port + workdir
 ```
 
@@ -31,28 +31,34 @@ Every invocation is fully isolated: a fresh tempdir for screenshots/scripts and 
 
 ## Drive your normal browser (extension mode)
 
-Some sites block browsers that were launched by automation. Extension mode sidesteps that: the **pwhs bridge** extension runs inside your everyday Chrome or Edge profile and bridges the DevTools protocol to the server over a token-protected local relay. No launch flags, no debug port, real cookies and logins. The whole HTTP API, `pwhs` and the SDK work unchanged.
+Some sites block browsers that were launched by automation. Extension mode sidesteps that: the **pwhs bridge** extension runs inside your everyday Chrome or Edge profile and bridges the DevTools protocol to the server over a local relay. No launch flags, no debug port, real cookies and logins. The whole HTTP API, `pwhs` and the SDK work unchanged.
+
+The browser is always listening: the extension searches the relay ports every few seconds, so any paired profile shows up within seconds of a server starting. Access is unlocked by **pair codes** the profile mints itself.
 
 ```bash
 # 1. Load the extension once per browser profile you want to drive:
 #    chrome://extensions -> Developer mode -> Load unpacked -> <package>/extension
-# 2. Pair it hands-free: opens a local page in your default browser, the extension picks up
-#    the token, and the command confirms. Paste the printed URL into any other profile too.
-pwhs pair --label Work            # (manual alternative: pwhs token, then paste into the popup)
+# 2. Open its popup, give the profile a label (e.g. Work), click "New code" and copy the code.
+#    Codes are scoped to that profile, expire (1h / 24h / 7d / 30d / never) and can be revoked
+#    in the popup at any time. Mint one per agent session.
 
-# 3. Drive it. --profile picks the label you chose; omit it when only one profile is paired.
-pwhs up --extension --profile Work
-pwhs profiles                     # every paired profile with its windows and tabs
+# 3. Drive it. The code's profile becomes the default target.
+pwhs up --extension --pair pwhs1-XXXXXXXX-XXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXX
+pwhs profiles                     # every reachable profile: ready or locked, with windows and tabs
 pwhs nav https://example.com      # ... every other verb as usual
 pwhs restart tab=1234             # hook onto an already-open tab (ids from `pwhs profiles` / `pwhs pages`)
 pwhs stop                         # detaches; your browser stays open
+
+# Or keep the code on this machine and address the profile by label from then on:
+pwhs keys add pwhs1-XXXX... "Claude on laptop"
+pwhs up --extension --profile Work
 ```
 
 `--window <id>` adopts a window's active tab, `--tab <id>` adopts exactly that tab; the default is the active tab of the focused window. `pwhs pages` lists every tab in the profile with ids, `pwhs switch <index>` attaches on demand, and tabs opened by the page are followed automatically. Only the tabs you drive show Chrome's "is debugging this browser" bar.
 
 What changes in this mode: the viewport follows the OS window by default (`viewport=emulated` pins 1280x720 per tab), device emulation is unavailable, `chrome://` pages and the Web Store cannot be attached, and top-level `data:` URLs are served through the relay because Chrome refuses them from the debugger API. Everything else, including AI snapshots with refs, tracing, clock control, raw CDP (with `Browser.*` window calls translated) and download capture, goes through the same code path as the other modes.
 
-Pairing is one token per machine (stored in the pwhs config dir), done once per profile with `pwhs pair`. The relay only accepts sockets from a `chrome-extension://` origin and both sides prove the token with an HMAC challenge before any traffic flows.
+Security model: a pair code is a per-profile bearer secret with an expiry, minted and revocable in the browser. The relay only accepts sockets from a `chrome-extension://` origin, and both sides prove the code with a mutual HMAC challenge before any traffic flows, so neither a web page nor a process without the code can drive or impersonate the browser. Codes given to an agent end up in its transcript, so prefer short expiries and revoke when done. Anything running as your user can read stored keys; the codes limit the blast radius to one profile for a bounded time.
 
 `playwright-http-server --help` lists every flag.
 
