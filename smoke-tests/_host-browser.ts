@@ -11,6 +11,7 @@ declare const chrome: {
 
 const { values } = parseArgs({
   options: {
+    extension: { type: 'boolean', default: false },
     token: { type: 'string' },
     label: { type: 'string', default: 'smoke' },
     'debug-port': { type: 'string' },
@@ -19,14 +20,18 @@ const { values } = parseArgs({
 });
 
 const extensionDir = path.resolve(__dirname, '..', 'extension');
-const extensionArgs = values.token
+const withExtension = values.extension || values.token !== undefined;
+const extensionArgs = withExtension
   ? [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`]
   : [];
 const debugArgs = values['debug-port'] ? [`--remote-debugging-port=${values['debug-port']}`] : [];
 
-const pairExtension = async (ctx: import('playwright').BrowserContext, token: string, label: string): Promise<void> => {
-  const worker = ctx.serviceWorkers()[0] ?? (await ctx.waitForEvent('serviceworker'));
+const awaitWorker = async (ctx: import('playwright').BrowserContext): Promise<import('playwright').Worker> => {
   ctx.on('console', (msg) => console.log(`[sw] ${msg.text()}`));
+  return ctx.serviceWorkers()[0] ?? (await ctx.waitForEvent('serviceworker'));
+};
+
+const seedPairing = async (worker: import('playwright').Worker, token: string, label: string): Promise<void> => {
   await worker.evaluate(
     async (settings: Record<string, string>) => { await chrome.storage.local.set(settings); },
     { token, label },
@@ -36,10 +41,13 @@ const pairExtension = async (ctx: import('playwright').BrowserContext, token: st
 const main = async (): Promise<void> => {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pwhs-host-'));
   const ctx = await chromium.launchPersistentContext(userDataDir, {
-    headless: !values.token,
+    headless: !withExtension,
     args: [...extensionArgs, ...debugArgs],
   });
-  if (values.token) await pairExtension(ctx, values.token, values.label);
+  if (withExtension) {
+    const worker = await awaitWorker(ctx);
+    if (values.token) await seedPairing(worker, values.token, values.label);
+  }
   await ctx.pages()[0].goto(values.url);
   console.log(`BROWSER_PID=${await browserPid(ctx)}`);
   console.log('READY');

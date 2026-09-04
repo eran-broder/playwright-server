@@ -5,6 +5,9 @@ export const RELAY_PORT_COUNT = 10;
 export const RELAY_HOST = '127.0.0.1';
 export const EXTENSION_PATH = '/extension';
 export const PLAYWRIGHT_PATH_PREFIX = '/playwright/';
+export const PAIR_PATH = '/pair';
+export const PAIR_STATUS_ID = 'pwhs-pair-status';
+export const PAIR_PAIRED_ATTRIBUTE = 'data-pwhs-paired';
 export const KEEPALIVE_INTERVAL_MS = 20_000;
 
 export const relayPortCandidates = (): number[] =>

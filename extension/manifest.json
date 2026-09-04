@@ -7,5 +7,8 @@
   "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
   "background": { "service_worker": "dist/background.js", "type": "module" },
   "action": { "default_popup": "popup.html", "default_title": "pwhs bridge" },
+  "content_scripts": [
+    { "matches": ["http://127.0.0.1/*"], "js": ["dist/pair.js"], "run_at": "document_idle" }
+  ],
   "incognito": "spanning"
 }

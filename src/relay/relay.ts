@@ -13,6 +13,7 @@ import { ExtensionConnection } from './extension-connection';
 import { InstanceCatalog } from './instances';
 import { PlaywrightSession, SessionEvent } from './playwright-session';
 import { DataUrlStore } from './data-urls';
+import { pairUrl, servePairPage } from './pair-page';
 
 const EXTENSION_ORIGIN_PREFIX = 'chrome-extension://';
 const SESSION_KEY_BYTES = 16;
@@ -36,7 +37,7 @@ export class Relay {
   readonly instances = new InstanceCatalog();
   private readonly dataUrls = new DataUrlStore(() => `http://${RELAY_HOST}:${this.boundPort}`);
   private readonly http = createServer((req, res) => {
-    if (this.dataUrls.serve(req, res)) return;
+    if (this.dataUrls.serve(req, res) || servePairPage(req, res)) return;
     res.statusCode = 404;
     res.end();
   });
@@ -50,6 +51,10 @@ export class Relay {
 
   get port(): number {
     return this.boundPort;
+  }
+
+  pairingUrl(label: string): string {
+    return pairUrl(`http://${RELAY_HOST}:${this.boundPort}`, label, this.token);
   }
 
   async listen(): Promise<number> {

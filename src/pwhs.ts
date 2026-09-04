@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { extractPort, resolvePort } from './pwhs/resolve';
 import { LifecycleVerb, up, down, ls, token } from './pwhs/lifecycle';
+import { pair } from './pwhs/pair';
 import { isVerbName, runVerb } from './pwhs/verbs';
 import { print } from './pwhs/format';
 import { HELP } from './pwhs/help';
@@ -21,6 +22,7 @@ const main = async (): Promise<void> => {
   if (verb === LifecycleVerb.Up) return up(args);
   if (verb === LifecycleVerb.Ls) return ls();
   if (verb === LifecycleVerb.Token) return token();
+  if (verb === LifecycleVerb.Pair) return pair(args);
   if (verb === LifecycleVerb.Down) return down(flagPort, args);
 
   if (!isVerbName(verb)) {

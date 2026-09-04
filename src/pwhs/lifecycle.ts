@@ -8,6 +8,7 @@ export enum LifecycleVerb {
   Down = 'down',
   Ls = 'ls',
   Token = 'token',
+  Pair = 'pair',
 }
 
 const EXTENSION_FLAG = '--extension';

@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 source "$(dirname "${BASH_SOURCE[0]}")/_helpers.sh"
 
-section "host browser with the pwhs extension"
-start_host_browser --token "$($PWHS token)" --label smoke
-assert_contains "host browser ready" "READY" cat "$HOST_LOG"
+section "hands-free pairing via pwhs pair"
+PAIR_LOG=$(mktemp)
+$PWHS pair --label smoke --no-open > "$PAIR_LOG" 2>&1 &
+PAIR_PID=$!
+until grep -q "http://127.0.0.1" "$PAIR_LOG"; do sleep 0.2; done
+PAIR_URL=$(grep -oE "http://127.0.0.1:[0-9]+/pair[^ ]*" "$PAIR_LOG" | head -1)
+echo "pair url: $PAIR_URL"
+start_host_browser --extension --url "$PAIR_URL"
+wait $PAIR_PID || true
+assert_contains "pwhs pair confirms the pairing" 'Paired "smoke"' cat "$PAIR_LOG"
+rm -f "$PAIR_LOG"
 section "pwhs up --extension"
 PORT=$($PWHS up --extension --profile smoke)
 export PWHS_PORT=$PORT
@@ -11,11 +19,11 @@ SERVER_LOG=$($PWHS status | node -e "let s='';process.stdin.on('data',d=>s+=d).o
 echo "server log: $SERVER_LOG"
 assert_contains "status reports extension mode" '"mode": "extension"' $PWHS status
 assert_contains "status reports the profile" '"profile": "smoke"' $PWHS status
-assert_contains "adopts the host tab" "host-tab" $PWHS title
+assert_contains "adopts the active tab" "pwhs pairing" $PWHS title
 
 section "profiles catalog"
 assert_contains "profiles lists the paired label" '"label": "smoke"' $PWHS profiles
-assert_contains "profiles lists the host tab" "host-tab" $PWHS profiles
+assert_contains "profiles lists the active tab" "pwhs pairing" $PWHS profiles
 
 PAGE='data:text/html,<title>refs-page</title><button onclick="this.textContent=String(99)">press</button><a href="data:text/plain,hi" download="hi.txt">save</a>'
 section "navigate, ai snapshot, click by ref, eval"

@@ -6,7 +6,11 @@ Lifecycle:
   pwhs down [-p <port>]       Stop the server on <port>
   pwhs down --all             Stop every running server
   pwhs ls                     List running servers (pruned to live pids)
-  pwhs token                  Print the pairing token for the browser extension
+  pwhs pair [--label L] [--no-open]
+                              Pair the browser extension hands-free: opens a
+                              local page in your default browser, the extension
+                              picks up the token, and pwhs confirms.
+  pwhs token                  Print the pairing token (manual pairing via popup)
 
 Browser:
   pwhs status                 GET /status

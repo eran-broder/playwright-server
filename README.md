@@ -36,8 +36,9 @@ Some sites block browsers that were launched by automation. Extension mode sides
 ```bash
 # 1. Load the extension once per browser profile you want to drive:
 #    chrome://extensions -> Developer mode -> Load unpacked -> <package>/extension
-# 2. Pair it: paste the token into the extension popup, give the profile a label, Save.
-pwhs token
+# 2. Pair it hands-free: opens a local page in your default browser, the extension picks up
+#    the token, and the command confirms. Paste the printed URL into any other profile too.
+pwhs pair --label Work            # (manual alternative: pwhs token, then paste into the popup)
 
 # 3. Drive it. --profile picks the label you chose; omit it when only one profile is paired.
 pwhs up --extension --profile Work
@@ -51,7 +52,7 @@ pwhs stop                         # detaches; your browser stays open
 
 What changes in this mode: the viewport follows the OS window by default (`viewport=emulated` pins 1280x720 per tab), device emulation is unavailable, `chrome://` pages and the Web Store cannot be attached, and top-level `data:` URLs are served through the relay because Chrome refuses them from the debugger API. Everything else, including AI snapshots with refs, tracing, clock control, raw CDP (with `Browser.*` window calls translated) and download capture, goes through the same code path as the other modes.
 
-Pairing is one token per machine (stored in the pwhs config dir) entered once per profile. The relay only accepts sockets from a `chrome-extension://` origin and both sides prove the token with an HMAC challenge before any traffic flows.
+Pairing is one token per machine (stored in the pwhs config dir), done once per profile with `pwhs pair`. The relay only accepts sockets from a `chrome-extension://` origin and both sides prove the token with an HMAC challenge before any traffic flows.
 
 `playwright-http-server --help` lists every flag.
 
