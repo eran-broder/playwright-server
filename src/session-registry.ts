@@ -6,6 +6,7 @@ import { z } from 'zod';
 const SessionEntrySchema = z.object({
   port: z.number(),
   workdir: z.string(),
+  launchCwd: z.string().optional(),
   pid: z.number(),
   startedAt: z.number(),
 });

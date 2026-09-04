@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { extractPort, resolvePort, up, down, ls } from './pwhs/lifecycle';
+import { extractPort, resolvePort } from './pwhs/resolve';
+import { up, down, ls } from './pwhs/lifecycle';
 import { isVerbName, runVerb } from './pwhs/verbs';
 import { print } from './pwhs/format';
 import { HELP } from './pwhs/help';

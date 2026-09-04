@@ -25,6 +25,7 @@ Each script auto-detects the local build via `node $SCRIPT_DIR/../dist/...`. To 
 | [50-sdk.ts](50-sdk.ts) (run via [50-sdk.sh](50-sdk.sh)) | TypeScript SDK: `import { startServer } from 'playwright-http-server'` → typed methods with zod-validated responses, no curl needed. |
 | [55-native-extras.sh](55-native-extras.sh) | Raw CDP passthrough (`pwhs cdp <method> [json]`), Playwright tracing (`pwhs trace start/stop` → trace.zip for the trace viewer), and clock control (`pwhs clock set/install/ff`). |
 | [60-cli-contract.sh](60-cli-contract.sh) | Asserts the CLI contract: help text, error messages and exit codes, flag-anywhere parsing, every `pwhs` verb, multi-session ambiguity. |
+| [65-viewport-window.sh](65-viewport-window.sh) | `--viewport window`: the page follows the OS window, so resizing crosses media-query breakpoints and fires resize events (proven against [responsive.html](responsive.html)); `emulated` (default) pins 1280x720 regardless of window size; device + `viewport=window` is rejected. |
 | [70-agent-repl.sh](70-agent-repl.sh) | Drive the SDK from a stateful Node REPL ([agent-repl](https://github.com/eran-broder/agent-repl)). One `globalThis.s = await startServer()`, then many independent `nrepl exec` calls share the same browser. Skipped automatically when `nrepl` is not on PATH (override with `NREPL="node /path/to/agent-repl/node/src/cli.js"`). |
 
 ## Reading the tests

@@ -14,6 +14,7 @@ TESTS=(
   "50-sdk.sh"
   "55-native-extras.sh"
   "60-cli-contract.sh"
+  "65-viewport-window.sh"
   "70-agent-repl.sh"
 )
 

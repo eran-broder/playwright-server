@@ -1,5 +1,11 @@
 import { z } from 'zod';
 import { SnapshotMode, WaitUntil } from './types';
+import { ViewportMode } from './viewport';
+
+export const BrowserStartBody = z.object({
+  device: z.string().optional(),
+  viewport: z.enum(ViewportMode).optional(),
+});
 
 const zClockTime = z.union([z.number(), z.string()]);
 const zQueryBool = z

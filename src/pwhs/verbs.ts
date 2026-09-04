@@ -83,6 +83,12 @@ const flagValue = (args: string[], name: string): string | undefined => {
   return match?.slice(name.length + 1);
 };
 
+const browserStartBody = (args: string[]): Record<string, string> => {
+  const device = args.find((a) => !a.includes('='));
+  const viewport = flagValue(args, 'viewport');
+  return { ...(device ? { device } : {}), ...(viewport ? { viewport } : {}) };
+};
+
 const snapPath = (args: string[]): string => {
   const q = new URLSearchParams();
   const selector = args.find((a) => !a.startsWith('--'));
@@ -135,7 +141,7 @@ const VERBS: Record<VerbName, VerbRunner> = {
   [VerbName.Start]: defineVerb({
     method: HttpMethod.Post,
     path: () => '/browser/start',
-    body: ([d]) => (d ? { device: d } : {}),
+    body: browserStartBody,
     schema: PassthroughResponse,
   }),
   [VerbName.Stop]: defineVerb({
@@ -147,7 +153,7 @@ const VERBS: Record<VerbName, VerbRunner> = {
   [VerbName.Restart]: defineVerb({
     method: HttpMethod.Post,
     path: () => '/browser/restart',
-    body: ([d]) => (d ? { device: d } : {}),
+    body: browserStartBody,
     schema: PassthroughResponse,
   }),
 

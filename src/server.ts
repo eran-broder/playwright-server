@@ -8,7 +8,9 @@ import { ScriptManager } from './script-manager';
 import { ScreenshotManager } from './screenshot-manager';
 import { register, unregister } from './session-registry';
 import { parseBrowser, parseProfileMode } from './profile-finder';
+import { parseViewportMode } from './viewport';
 import {
+  BrowserStartBody,
   NavigateBody,
   HistoryBody,
   SnapshotQuery,
@@ -94,9 +96,9 @@ app.get('/status', (_req: Request, res: Response) => {
 // ============ Browser Endpoints ============
 
 app.post('/browser/start', asyncHandler(async (req: Request, res: Response) => {
-  const device = typeof req.body?.device === 'string' ? req.body.device : undefined;
-  await browserManager.start({ device });
-  res.json({ success: true, message: 'Browser started', device: device ?? null });
+  const { device, viewport } = BrowserStartBody.parse(req.body ?? {});
+  await browserManager.start({ device, viewport });
+  res.json({ success: true, message: 'Browser started', device: device ?? null, viewport: viewport ?? null });
 }));
 
 app.post('/browser/stop', asyncHandler(async (_req: Request, res: Response) => {
@@ -105,9 +107,9 @@ app.post('/browser/stop', asyncHandler(async (_req: Request, res: Response) => {
 }));
 
 app.post('/browser/restart', asyncHandler(async (req: Request, res: Response) => {
-  const device = typeof req.body?.device === 'string' ? req.body.device : undefined;
-  await browserManager.restart({ device });
-  res.json({ success: true, message: 'Browser restarted', device: device ?? null });
+  const { device, viewport } = BrowserStartBody.parse(req.body ?? {});
+  await browserManager.restart({ device, viewport });
+  res.json({ success: true, message: 'Browser restarted', device: device ?? null, viewport: viewport ?? null });
 }));
 
 // ============ Navigation Endpoints ============
@@ -475,6 +477,7 @@ function startupOptionsFromEnv(): StartOptions {
   if (process.env.PROFILE_MODE) opts.profileMode = parseProfileMode(process.env.PROFILE_MODE);
   if (process.env.USER_DATA_DIR) opts.userDataDir = process.env.USER_DATA_DIR;
   if (process.env.ATTACH) opts.attach = process.env.ATTACH;
+  if (process.env.VIEWPORT) opts.viewport = parseViewportMode(process.env.VIEWPORT);
   return opts;
 }
 
@@ -496,6 +499,7 @@ async function main(): Promise<void> {
     register({
       port: actualPort,
       workdir: process.cwd(),
+      launchCwd: process.env.PWHS_LAUNCH_CWD,
       pid: process.pid,
       startedAt: Date.now(),
     });

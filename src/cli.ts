@@ -13,6 +13,7 @@ const { values } = parseArgs({
     'profile-mode': { type: 'string' },
     'user-data-dir': { type: 'string' },
     attach: { type: 'string' },
+    viewport: { type: 'string' },
     help: { type: 'boolean', short: 'h' },
   },
   allowPositionals: false,
@@ -36,6 +37,10 @@ Options:
   --attach <target>          Attach to a running browser over CDP instead of
                              launching one. Target: port, URL, or "auto"
                              (DevToolsActivePort of Chrome/Edge, then :9222).
+  --viewport <mode>          emulated (default): fixed 1280x720 viewport,
+                             deterministic regardless of window size.
+                             window: viewport follows the OS window, so
+                             resizing reflows the page and fires media queries.
   -h, --help                 Show this help.
 
 Examples:
@@ -58,6 +63,7 @@ Notes:
 const workdir = values.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-http-'));
 const port = values.port ?? '0';
 
+if (!process.env.PWHS_LAUNCH_CWD) process.env.PWHS_LAUNCH_CWD = process.cwd();
 fs.mkdirSync(workdir, { recursive: true });
 process.chdir(workdir);
 process.env.PORT = port;
@@ -67,6 +73,7 @@ if (values.profile) process.env.PROFILE = values.profile;
 if (values['profile-mode']) process.env.PROFILE_MODE = values['profile-mode'];
 if (values['user-data-dir']) process.env.USER_DATA_DIR = values['user-data-dir'];
 if (values.attach) process.env.ATTACH = values.attach;
+if (values.viewport) process.env.VIEWPORT = values.viewport;
 
 console.log(`[session] workdir: ${workdir}`);
 

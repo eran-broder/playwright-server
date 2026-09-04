@@ -13,6 +13,7 @@ import {
 } from './profile-finder';
 import { resolveAttachUrl } from './cdp-finder';
 import { CdpBridge } from './cdp-bridge';
+import { ViewportMode } from './viewport';
 
 export enum LaunchMode {
   Ephemeral = 'ephemeral',
@@ -22,6 +23,7 @@ export enum LaunchMode {
 
 export interface StartOptions {
   device?: string;
+  viewport?: ViewportMode;
   browser?: BrowserKind;
   profile?: string;
   profileMode?: ProfileMode;
@@ -67,7 +69,7 @@ export class BrowserManager {
     this.currentOpts = opts;
 
     const channel = opts.browser ? channelFor(opts.browser) : undefined;
-    const deviceConfig = this.resolveDeviceConfig(opts.device);
+    const deviceConfig = this.resolveDeviceConfig(opts.device, opts.viewport);
 
     if (opts.attach) {
       await this.startAttached(opts.attach);
@@ -328,7 +330,14 @@ export class BrowserManager {
     }
   }
 
-  private resolveDeviceConfig(device?: string): DeviceConfig {
+  private resolveDeviceConfig(device?: string, viewport?: ViewportMode): DeviceConfig {
+    if (device && viewport === ViewportMode.Window) {
+      throw new Error('device emulation and viewport=window are mutually exclusive');
+    }
+    if (viewport === ViewportMode.Window) {
+      this.currentDevice = null;
+      return { viewport: null };
+    }
     if (!device) {
       this.currentDevice = null;
       return {};

@@ -8,9 +8,12 @@ Lifecycle:
 
 Browser:
   pwhs status                 GET /status
-  pwhs start [device]         POST /browser/start (optional device name)
+  pwhs start [device] [viewport=emulated|window]
+                              POST /browser/start. viewport=window makes the
+                              page follow the OS window size (responsive mode).
   pwhs stop                   POST /browser/stop
-  pwhs restart [device]       POST /browser/restart
+  pwhs restart [device] [viewport=emulated|window]
+                              POST /browser/restart
 
 Navigation (waitUntil: load|domcontentloaded|networkidle|commit):
   pwhs nav <url> [waitUntil]  POST /navigate
@@ -61,6 +64,8 @@ Multi-tab:
 Port selection (every verb except up/ls):
   --port <n> / -p <n>     Per-call override.
   $PWHS_PORT              Sticky session for the shell.
-  Neither set, multiple servers running -> error showing the options.
-  Neither set, no servers running       -> error suggesting 'pwhs up'.
+  Caller cwd              Server launched from your cwd (or an ancestor of it);
+                          nearest launch dir wins. See LAUNCHED-FROM in 'pwhs ls'.
+  No match, servers running   -> error showing the options.
+  No match, no servers        -> error suggesting 'pwhs up'.
 `;
