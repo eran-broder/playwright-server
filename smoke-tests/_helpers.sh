@@ -12,6 +12,16 @@ cleanup_all_sessions() {
   $PWHS down --all >/dev/null 2>&1 || true
 }
 
+kill_tree() {
+  local pid=$1
+  [ -n "$pid" ] || return 0
+  if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* || "$(uname -s)" == CYGWIN* ]]; then
+    taskkill //PID "$pid" //T //F >/dev/null 2>&1 || true
+  else
+    kill "$pid" 2>/dev/null || true
+  fi
+}
+
 start_session() {
   PORT=$($PWHS up "$@")
   trap cleanup_all_sessions EXIT
@@ -102,4 +112,24 @@ print_summary_and_exit() {
     exit 1
   fi
   echo "OK"
+}
+
+start_host_browser() {
+  HOST_LOG=$(mktemp)
+  (cd "$HELPERS_DIR/.." && npx --no-install ts-node "$HELPERS_DIR/_host-browser.ts" "$@" > "$HOST_LOG" 2>&1) &
+  HOST_PID=$!
+  trap cleanup_host_browser EXIT
+  for _ in $(seq 1 120); do
+    grep -q "READY" "$HOST_LOG" 2>/dev/null && return 0
+    if ! kill -0 $HOST_PID 2>/dev/null; then cat "$HOST_LOG"; exit 1; fi
+    sleep 0.5
+  done
+  echo "host browser did not become ready"; cat "$HOST_LOG"; exit 1
+}
+
+cleanup_host_browser() {
+  cleanup_all_sessions
+  kill_tree "$(grep -oE 'BROWSER_PID=[0-9]+' "$HOST_LOG" 2>/dev/null | cut -d= -f2)"
+  kill_tree "$HOST_PID"
+  if [ "${KEEP_HOST_LOG:-}" = "1" ]; then echo "host log kept: $HOST_LOG"; else rm -f "$HOST_LOG"; fi
 }

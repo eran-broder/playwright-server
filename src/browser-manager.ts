@@ -1,25 +1,21 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { chromium, devices, Browser, BrowserContext, Locator, Page } from 'playwright';
-import type { BrowserStatus, SnapshotOptions } from './types';
+import { devices, Browser, BrowserContext, Locator, Page } from 'playwright';
+import type { BrowserStatus, PageInfo, SnapshotOptions } from './types';
 import { WaitUntil } from './types';
-import {
-  BrowserKind,
-  ProfileMode,
-  Channel,
-  channelFor,
-  prepareUserDataDir,
-  CRITICAL_PROFILE_FILES,
-} from './profile-finder';
-import { resolveAttachUrl } from './cdp-finder';
+import { BrowserKind, ProfileMode, channelFor } from './profile-finder';
 import { CdpBridge } from './cdp-bridge';
-import { ViewportMode } from './viewport';
+import { EMULATED_VIEWPORT, ViewportMode } from './viewport';
+import {
+  DeviceConfig,
+  Launched,
+  LaunchMode,
+  connectAttached,
+  launchEphemeral,
+  launchPersistent,
+} from './launchers';
+import { ExtensionDriver } from './extension-driver';
+import type { Relay } from './relay/relay';
 
-export enum LaunchMode {
-  Ephemeral = 'ephemeral',
-  Persistent = 'persistent',
-  Attached = 'attached',
-}
+export { LaunchMode };
 
 export interface StartOptions {
   device?: string;
@@ -29,6 +25,9 @@ export interface StartOptions {
   profileMode?: ProfileMode;
   userDataDir?: string;
   attach?: string;
+  extension?: boolean;
+  window?: number;
+  tab?: number;
 }
 
 export interface TraceStartOptions {
@@ -38,9 +37,10 @@ export interface TraceStartOptions {
 
 export type ClockTime = number | string;
 
-type DeviceConfig = Parameters<Browser['newContext']>[0];
 type GotoWaitUntil = NonNullable<Parameters<Page['goto']>[1]>['waitUntil'];
 type AriaSnapshotOptions = Parameters<Locator['ariaSnapshot']>[0];
+
+const EXTENSION_CONNECT_TIMEOUT_MS = 100_000;
 
 const removeUndefined = <T extends Record<string, unknown>>(obj: T): Partial<T> =>
   Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as Partial<T>;
@@ -50,6 +50,9 @@ const toGotoWaitUntil = (w: WaitUntil): GotoWaitUntil => (w as string) as GotoWa
 const isPersistentMode = (opts: StartOptions): boolean =>
   Boolean(opts.profile || opts.userDataDir);
 
+const effectiveViewport = (opts: StartOptions): ViewportMode =>
+  opts.viewport ?? (opts.extension ? ViewportMode.Window : ViewportMode.Emulated);
+
 export class BrowserManager {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
@@ -58,7 +61,10 @@ export class BrowserManager {
   private currentDevice: string | null = null;
   private currentOpts: StartOptions = {};
   private mode: LaunchMode | null = null;
+  private extension: ExtensionDriver | null = null;
   private cdp = new CdpBridge();
+
+  constructor(private readonly relay: Relay | null = null) {}
 
   setOnPageCreated(callback: (page: Page) => void): void {
     this.onPageCreated = callback;
@@ -67,39 +73,20 @@ export class BrowserManager {
   async start(opts: StartOptions = {}): Promise<void> {
     await this.stop();
     this.currentOpts = opts;
-
-    const channel = opts.browser ? channelFor(opts.browser) : undefined;
-    const deviceConfig = this.resolveDeviceConfig(opts.device, opts.viewport);
-
-    if (opts.attach) {
-      await this.startAttached(opts.attach);
-    } else if (isPersistentMode(opts)) {
-      await this.startPersistent(opts, channel, deviceConfig);
-    } else {
-      await this.startEphemeral(channel, deviceConfig);
-    }
-
-    if (this.onPageCreated && this.page) {
-      this.onPageCreated(this.page);
-    }
+    const launched = await this.launch(opts);
+    this.adopt(launched);
+    launched.pages.forEach((page) => this.onPageCreated?.(page));
+    await this.applyViewport(launched.page);
   }
 
   async stop(): Promise<void> {
-    if (this.mode === LaunchMode.Attached) {
-      if (this.browser) await this.browser.close();
+    if (this.extension) {
+      await this.extension.disconnect();
     } else {
-      if (this.context && !this.browser) {
-        await this.context.close();
-      }
-      if (this.browser) {
-        await this.browser.close();
-      }
+      if (this.context && !this.browser) await this.context.close();
+      if (this.browser) await this.browser.close();
     }
-    this.browser = null;
-    this.context = null;
-    this.page = null;
-    this.currentDevice = null;
-    this.mode = null;
+    this.resetState();
   }
 
   async restart(opts: StartOptions = {}): Promise<void> {
@@ -138,6 +125,8 @@ export class BrowserManager {
       hasPage: this.page !== null,
       currentUrl: this.page?.url(),
       mode: this.mode ?? undefined,
+      profile: this.extension?.profileLabel ?? this.currentOpts.profile,
+      relayPort: this.relay?.port,
     };
   }
 
@@ -156,7 +145,9 @@ export class BrowserManager {
   }
 
   private defaultWaitUntil(): WaitUntil {
-    return this.mode === LaunchMode.Attached ? WaitUntil.Load : WaitUntil.NetworkIdle;
+    return this.mode === LaunchMode.Ephemeral || this.mode === LaunchMode.Persistent
+      ? WaitUntil.NetworkIdle
+      : WaitUntil.Load;
   }
 
   async navigate(url: string, waitUntil?: WaitUntil): Promise<void> {
@@ -180,53 +171,43 @@ export class BrowserManager {
   }
 
   async screenshot(path: string, fullPage: boolean): Promise<void> {
-    const page = this.requirePage();
-    await page.screenshot({ path, fullPage });
+    await this.requirePage().screenshot({ path, fullPage });
   }
 
   async click(selector: string): Promise<void> {
-    const page = this.requirePage();
-    await page.click(selector);
+    await this.requirePage().click(selector);
   }
 
   async type(selector: string, text: string): Promise<void> {
-    const page = this.requirePage();
-    await page.fill(selector, text);
+    await this.requirePage().fill(selector, text);
   }
 
   async waitForSelector(selector: string, timeout: number): Promise<void> {
-    const page = this.requirePage();
-    await page.waitForSelector(selector, { timeout });
+    await this.requirePage().waitForSelector(selector, { timeout });
   }
 
   async getContent(): Promise<string> {
-    const page = this.requirePage();
-    return page.content();
+    return this.requirePage().content();
   }
 
   async getTitle(): Promise<string> {
-    const page = this.requirePage();
-    return page.title();
+    return this.requirePage().title();
   }
 
   getUrl(): string {
-    const page = this.requirePage();
-    return page.url();
+    return this.requirePage().url();
   }
 
   async pressKey(key: string): Promise<void> {
-    const page = this.requirePage();
-    await page.keyboard.press(key);
+    await this.requirePage().keyboard.press(key);
   }
 
   async selectOption(selector: string, value: string): Promise<void> {
-    const page = this.requirePage();
-    await page.selectOption(selector, value);
+    await this.requirePage().selectOption(selector, value);
   }
 
   async hover(selector: string): Promise<void> {
-    const page = this.requirePage();
-    await page.hover(selector);
+    await this.requirePage().hover(selector);
   }
 
   async snapshot(selector?: string, opts: SnapshotOptions = {}): Promise<string> {
@@ -269,65 +250,112 @@ export class BrowserManager {
   }
 
   async scroll(x: number, y: number): Promise<void> {
-    const page = this.requirePage();
-    await page.evaluate(`window.scrollBy(${x}, ${y})`);
+    await this.requirePage().evaluate(`window.scrollBy(${x}, ${y})`);
   }
 
   async evaluate<T>(code: string): Promise<T> {
-    const page = this.requirePage();
-    return page.evaluate(code) as Promise<T>;
+    return this.requirePage().evaluate(code) as Promise<T>;
   }
 
   async executePlaywrightCode<T>(code: string): Promise<T> {
-    const page = this.requirePage();
-    const context = this.context;
-    const browser = this.browser;
-
     const asyncFn = new Function(
       'page',
       'context',
       'browser',
       `return (async () => { ${code} })();`,
     );
-
-    return asyncFn(page, context, browser) as Promise<T>;
+    return asyncFn(this.requirePage(), this.context, this.browser) as Promise<T>;
   }
 
-  async listPages(): Promise<{ index: number; url: string; title: string }[]> {
+  async listPages(): Promise<PageInfo[]> {
+    if (this.extension) {
+      const tabs = await this.extension.listTabs();
+      return tabs.map((t, index) => ({
+        index,
+        url: t.url,
+        title: t.title,
+        tabId: t.id,
+        windowId: t.windowId,
+        active: t.active,
+        attached: t.attached,
+      }));
+    }
     if (!this.context) return [];
     const pages = this.context.pages();
-    const result = [];
-    for (let i = 0; i < pages.length; i++) {
-      result.push({
-        index: i,
-        url: pages[i].url(),
-        title: await pages[i].title(),
-      });
-    }
-    return result;
+    return Promise.all(pages.map(async (p, index) => ({ index, url: p.url(), title: await p.title() })));
   }
 
   async switchToPage(index: number): Promise<void> {
-    if (!this.context) throw new Error('No browser context');
-    const pages = this.context.pages();
+    if (this.extension) {
+      const tabs = await this.extension.listTabs();
+      const tab = tabs[index];
+      if (!tab) throw new Error(`Invalid page index: ${index}. Available: 0-${tabs.length - 1}`);
+      return this.activate(await this.extension.switchTo(tab.id));
+    }
+    const pages = this.requireContext().pages();
     if (index < 0 || index >= pages.length) {
       throw new Error(`Invalid page index: ${index}. Available: 0-${pages.length - 1}`);
     }
-    this.page = pages[index];
-    if (this.onPageCreated) {
-      this.onPageCreated(this.page);
-    }
+    await this.activate(pages[index]);
   }
 
   async switchToLatestPage(): Promise<void> {
-    if (!this.context) throw new Error('No browser context');
-    const pages = this.context.pages();
-    if (pages.length > 0) {
-      this.page = pages[pages.length - 1];
-      if (this.onPageCreated) {
-        this.onPageCreated(this.page);
-      }
-    }
+    if (this.extension) return this.activate(await this.extension.latest());
+    const pages = this.requireContext().pages();
+    if (pages.length > 0) await this.activate(pages[pages.length - 1]);
+  }
+
+  private async activate(page: Page): Promise<void> {
+    this.page = page;
+    this.onPageCreated?.(page);
+    await this.applyViewport(page);
+  }
+
+  private async applyViewport(page: Page): Promise<void> {
+    if (this.mode !== LaunchMode.Extension) return;
+    if (effectiveViewport(this.currentOpts) !== ViewportMode.Emulated) return;
+    await page.setViewportSize(EMULATED_VIEWPORT);
+  }
+
+  private async launch(opts: StartOptions): Promise<Launched> {
+    if (opts.extension) return this.launchExtension(opts);
+    const deviceConfig = this.resolveDeviceConfig(opts.device, effectiveViewport(opts));
+    if (opts.attach) return connectAttached(opts.attach);
+    const channel = opts.browser ? channelFor(opts.browser) : undefined;
+    if (isPersistentMode(opts)) return launchPersistent(opts, channel, deviceConfig);
+    return launchEphemeral(channel, deviceConfig);
+  }
+
+  private async launchExtension(opts: StartOptions): Promise<Launched> {
+    if (!this.relay) throw new Error('Extension mode requires the server to run with --extension');
+    if (opts.device) throw new Error('Device emulation is not available in extension mode');
+    const driver = new ExtensionDriver(this.relay);
+    const launched = await driver.connect(
+      { profile: opts.profile, window: opts.window, tab: opts.tab },
+      EXTENSION_CONNECT_TIMEOUT_MS,
+    );
+    this.extension = driver;
+    launched.browser?.once('disconnected', () => {
+      if (this.browser === launched.browser) this.resetState();
+    });
+    return launched;
+  }
+
+  private adopt(launched: Launched): void {
+    this.browser = launched.browser;
+    this.context = launched.context;
+    this.page = launched.page;
+    this.mode = launched.mode;
+    launched.context.on('page', (page) => this.onPageCreated?.(page));
+  }
+
+  private resetState(): void {
+    this.browser = null;
+    this.context = null;
+    this.page = null;
+    this.currentDevice = null;
+    this.mode = null;
+    this.extension = null;
   }
 
   private resolveDeviceConfig(device?: string, viewport?: ViewportMode): DeviceConfig {
@@ -349,70 +377,4 @@ export class BrowserManager {
     this.currentDevice = device;
     return { ...d };
   }
-
-  private adoptContext(context: BrowserContext, mode: LaunchMode): void {
-    this.context = context;
-    this.mode = mode;
-    context.on('page', (page) => this.onPageCreated?.(page));
-  }
-
-  private async startEphemeral(channel: Channel, deviceConfig: DeviceConfig): Promise<void> {
-    this.browser = await chromium.launch({ headless: false, channel });
-    const authPath = process.env.AUTH_PATH || path.join(process.cwd(), 'auth.json');
-    let context: BrowserContext;
-    if (fs.existsSync(authPath)) {
-      console.log('Loading auth state from ' + authPath);
-      const state = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
-      context = await this.browser.newContext({ ...deviceConfig, storageState: state });
-    } else {
-      context = await this.browser.newContext(deviceConfig);
-    }
-    this.adoptContext(context, LaunchMode.Ephemeral);
-    this.page = await context.newPage();
-  }
-
-  private async startPersistent(
-    opts: StartOptions,
-    channel: Channel,
-    deviceConfig: DeviceConfig,
-  ): Promise<void> {
-    const browser = opts.browser ?? BrowserKind.Chromium;
-    const profile = opts.profile ?? 'Default';
-    const mode = opts.profileMode ?? ProfileMode.Copy;
-    const setup = await prepareUserDataDir(browser, profile, mode, process.cwd(), opts.userDataDir);
-    console.log(`Launching ${browser} with profile "${profile}" (${mode}) at ${setup.userDataDir}`);
-    warnSkippedCriticalFiles(setup.skipped, browser);
-
-    const context = await chromium.launchPersistentContext(setup.userDataDir, {
-      headless: false,
-      channel,
-      args: [setup.profileArg],
-      ...deviceConfig,
-    });
-    this.adoptContext(context, LaunchMode.Persistent);
-    this.browser = context.browser();
-    const existing = context.pages();
-    this.page = existing[0] ?? (await context.newPage());
-  }
-
-  private async startAttached(spec: string): Promise<void> {
-    const url = await resolveAttachUrl(spec);
-    console.log(`Attaching over CDP: ${url}`);
-    this.browser = await chromium.connectOverCDP(url);
-    const context = this.browser.contexts()[0] ?? (await this.browser.newContext());
-    this.adoptContext(context, LaunchMode.Attached);
-    const existing = context.pages();
-    this.page = existing[existing.length - 1] ?? (await context.newPage());
-    for (const page of existing) this.onPageCreated?.(page);
-  }
 }
-
-const warnSkippedCriticalFiles = (skipped: string[], browser: BrowserKind): void => {
-  const critical = skipped.filter((p) => CRITICAL_PROFILE_FILES.includes(path.basename(p)));
-  if (critical.length === 0) return;
-  console.warn(
-    `[warning] Could not copy ${critical.length} critical file(s) — likely locked by a running ${browser} instance:`,
-  );
-  for (const p of critical) console.warn(`  ${p}`);
-  console.warn(`Close ${browser} fully and restart the server for cookies/logins to transfer.`);
-};

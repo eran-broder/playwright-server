@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { WindowInfo } from '../extension/protocol';
 
 export enum HttpMethod {
   Get = 'GET',
@@ -6,6 +7,15 @@ export enum HttpMethod {
 }
 
 const SuccessBase = z.object({ success: z.boolean() });
+
+export const ProfileInfo = z.object({
+  id: z.string(),
+  label: z.string(),
+  brand: z.string(),
+  version: z.string(),
+  windows: z.array(WindowInfo),
+});
+export type ProfileInfo = z.infer<typeof ProfileInfo>;
 
 export const NavigateResponse = SuccessBase.extend({ url: z.string() });
 export const UrlResponse = SuccessBase.extend({ url: z.string() });
@@ -20,6 +30,10 @@ export const ScreenshotsResponse = SuccessBase.extend({ screenshots: z.array(z.u
 export const ResultResponse = SuccessBase.extend({ result: z.unknown().optional() });
 export const TraceStopResponse = SuccessBase.extend({ path: z.string() });
 export const PagesResponse = SuccessBase.extend({ pages: z.array(z.unknown()) });
+export const ProfilesResponse = SuccessBase.extend({
+  relayPort: z.number(),
+  profiles: z.array(ProfileInfo),
+});
 export const PassthroughResponse = z.unknown();
 
 export const request = async <S extends z.ZodType>(

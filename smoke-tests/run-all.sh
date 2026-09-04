@@ -16,6 +16,7 @@ TESTS=(
   "60-cli-contract.sh"
   "65-viewport-window.sh"
   "70-agent-repl.sh"
+  "75-extension.sh"
 )
 
 pass=()

@@ -12,13 +12,16 @@ import {
   ScreenshotsResponse,
   ResultResponse,
   PagesResponse,
+  ProfilesResponse,
 } from './http';
+import { BrowserStartBody } from '../request-schemas';
 
 export enum VerbName {
   Status = 'status',
   Start = 'start',
   Stop = 'stop',
   Restart = 'restart',
+  Profiles = 'profiles',
   Nav = 'nav',
   Back = 'back',
   Forward = 'forward',
@@ -83,10 +86,14 @@ const flagValue = (args: string[], name: string): string | undefined => {
   return match?.slice(name.length + 1);
 };
 
-const browserStartBody = (args: string[]): Record<string, string> => {
+const START_FLAGS = ['viewport', 'profile', 'window', 'tab'] as const;
+
+const browserStartBody = (args: string[]): BrowserStartBody => {
   const device = args.find((a) => !a.includes('='));
-  const viewport = flagValue(args, 'viewport');
-  return { ...(device ? { device } : {}), ...(viewport ? { viewport } : {}) };
+  const flags = Object.fromEntries(
+    START_FLAGS.map((name) => [name, flagValue(args, name)]).filter(([, v]) => v !== undefined),
+  );
+  return BrowserStartBody.parse({ ...(device ? { device } : {}), ...flags });
 };
 
 const snapPath = (args: string[]): string => {
@@ -155,6 +162,13 @@ const VERBS: Record<VerbName, VerbRunner> = {
     path: () => '/browser/restart',
     body: browserStartBody,
     schema: PassthroughResponse,
+  }),
+
+  [VerbName.Profiles]: defineVerb({
+    method: HttpMethod.Get,
+    path: () => '/profiles',
+    schema: ProfilesResponse,
+    output: (r) => r.profiles,
   }),
 
   [VerbName.Nav]: defineVerb({

@@ -21,12 +21,37 @@ Three ways to drive it:
 playwright-http-server                                          # ephemeral chromium
 playwright-http-server --browser edge --profile Default         # your real Edge profile
 playwright-http-server --attach auto                            # attach to a browser you already have open
+playwright-http-server --extension --profile Work               # drive your normal browser via the pwhs bridge extension
 playwright-http-server --port 3456 --dir ./mySession            # pinned port + workdir
 ```
 
 `--attach` connects over CDP to a running Chrome/Edge — tabs, cookies, and logins included — instead of launching a new browser. Enable remote debugging once (`chrome://inspect/#remote-debugging` on Chrome 146+, or launch with `--remote-debugging-port=9222`), then attach by port, URL, or `auto`. Stopping the server disconnects; your browser stays open.
 
 Every invocation is fully isolated: a fresh tempdir for screenshots/scripts and an OS-picked free port. Both are printed on startup. Run as many concurrent instances as you want.
+
+## Drive your normal browser (extension mode)
+
+Some sites block browsers that were launched by automation. Extension mode sidesteps that: the **pwhs bridge** extension runs inside your everyday Chrome or Edge profile and bridges the DevTools protocol to the server over a token-protected local relay. No launch flags, no debug port, real cookies and logins. The whole HTTP API, `pwhs` and the SDK work unchanged.
+
+```bash
+# 1. Load the extension once per browser profile you want to drive:
+#    chrome://extensions -> Developer mode -> Load unpacked -> <package>/extension
+# 2. Pair it: paste the token into the extension popup, give the profile a label, Save.
+pwhs token
+
+# 3. Drive it. --profile picks the label you chose; omit it when only one profile is paired.
+pwhs up --extension --profile Work
+pwhs profiles                     # every paired profile with its windows and tabs
+pwhs nav https://example.com      # ... every other verb as usual
+pwhs restart tab=1234             # hook onto an already-open tab (ids from `pwhs profiles` / `pwhs pages`)
+pwhs stop                         # detaches; your browser stays open
+```
+
+`--window <id>` adopts a window's active tab, `--tab <id>` adopts exactly that tab; the default is the active tab of the focused window. `pwhs pages` lists every tab in the profile with ids, `pwhs switch <index>` attaches on demand, and tabs opened by the page are followed automatically. Only the tabs you drive show Chrome's "is debugging this browser" bar.
+
+What changes in this mode: the viewport follows the OS window by default (`viewport=emulated` pins 1280x720 per tab), device emulation is unavailable, `chrome://` pages and the Web Store cannot be attached, and top-level `data:` URLs are served through the relay because Chrome refuses them from the debugger API. Everything else, including AI snapshots with refs, tracing, clock control, raw CDP (with `Browser.*` window calls translated) and download capture, goes through the same code path as the other modes.
+
+Pairing is one token per machine (stored in the pwhs config dir) entered once per profile. The relay only accepts sockets from a `chrome-extension://` origin and both sides prove the token with an HMAC challenge before any traffic flows.
 
 `playwright-http-server --help` lists every flag.
 
@@ -46,6 +71,7 @@ The **single source of truth** for what this package does is the runnable smoke 
 | [smoke-tests/50-sdk.ts](smoke-tests/50-sdk.ts) | Use the TypeScript SDK — typed methods, no curl |
 | [smoke-tests/55-native-extras.sh](smoke-tests/55-native-extras.sh) | Raw CDP commands, Playwright tracing, clock control |
 | [smoke-tests/70-agent-repl.sh](smoke-tests/70-agent-repl.sh) | Drive the SDK from a stateful Node REPL — share one browser across many turns |
+| [smoke-tests/75-extension.sh](smoke-tests/75-extension.sh) | Drive a normal browser through the pwhs bridge extension (`--extension`), pick profiles, windows and tabs |
 
 ```bash
 bash smoke-tests/run-all.sh   # run every test

@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import * as path from 'path';
 import { list as listSessions } from '../session-registry';
 
-const SERVER_REGISTER_TIMEOUT_MS = 60_000;
+const SERVER_REGISTER_TIMEOUT_MS = 120_000;
 const SERVER_POLL_INTERVAL_MS = 150;
 const CLI_PATH = path.join(__dirname, '..', 'cli.js');
 

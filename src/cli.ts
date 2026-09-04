@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { mirrorConsoleToFile } from './log-file';
 
 const { values } = parseArgs({
   options: {
@@ -13,14 +14,16 @@ const { values } = parseArgs({
     'profile-mode': { type: 'string' },
     'user-data-dir': { type: 'string' },
     attach: { type: 'string' },
+    extension: { type: 'boolean' },
+    window: { type: 'string' },
+    tab: { type: 'string' },
     viewport: { type: 'string' },
     help: { type: 'boolean', short: 'h' },
   },
   allowPositionals: false,
 });
 
-if (values.help) {
-  console.log(`Usage: playwright-http-server [options]
+const HELP = `Usage: playwright-http-server [options]
 
 Every invocation spawns a fresh isolated session: a new tempdir for
 screenshots/scripts/auth, and an OS-picked free port. Both are printed
@@ -30,17 +33,21 @@ Options:
   --port <n>                 Override the auto-picked port. Use 0 for auto-pick.
   --dir <path>               Override the auto-created tempdir.
   --browser <kind>           chromium (default) | edge | chrome
-  --profile <name>           Profile name (e.g. Default, "Profile 1").
-                             Implies persistent-context mode.
+  --profile <name>           Launch mode: profile directory (Default, "Profile 1").
+                             Extension mode: label of the paired browser profile.
   --profile-mode <mode>      copy (default, snapshot to tempdir) | live (real path).
   --user-data-dir <path>     Override the auto-detected user-data-dir.
   --attach <target>          Attach to a running browser over CDP instead of
                              launching one. Target: port, URL, or "auto"
                              (DevToolsActivePort of Chrome/Edge, then :9222).
-  --viewport <mode>          emulated (default): fixed 1280x720 viewport,
-                             deterministic regardless of window size.
-                             window: viewport follows the OS window, so
-                             resizing reflows the page and fires media queries.
+  --extension                Drive a normal browser through the pwhs bridge
+                             extension. No launch flags, no debug port, real
+                             profile. Pair once with the token from 'pwhs token'.
+  --window <id>              Extension mode: adopt this window's active tab.
+  --tab <id>                 Extension mode: adopt exactly this tab.
+  --viewport <mode>          emulated: fixed 1280x720 viewport (default when
+                             launching). window: viewport follows the OS window
+                             (default in extension mode).
   -h, --help                 Show this help.
 
 Examples:
@@ -49,16 +56,37 @@ Examples:
   playwright-http-server --browser chrome --profile "Profile 1" --profile-mode live
   playwright-http-server --user-data-dir ./my-profile
   playwright-http-server --attach auto
-  playwright-http-server --attach 9222
+  playwright-http-server --extension --profile Work
+  playwright-http-server --extension --tab 1234
 
 Notes:
   - --profile-mode copy snapshots the profile (excluding cache dirs) so the
     real browser profile is never modified. Close the source browser first
     so cookie/login SQLite files aren't locked during the copy.
   - --profile-mode live launches on the real path. Source browser must be
-    fully closed; automation changes will persist back to your real profile.`);
+    fully closed; automation changes will persist back to your real profile.
+  - --extension waits for a paired browser profile to connect; click the
+    extension icon to connect immediately.`;
+
+if (values.help) {
+  console.log(HELP);
   process.exit(0);
 }
+
+const LAUNCH_ONLY_FLAGS = ['browser', 'profile-mode', 'user-data-dir', 'attach'] as const;
+const EXTENSION_ONLY_FLAGS = ['window', 'tab'] as const;
+
+const rejectConflicts = (): void => {
+  if (values.extension) {
+    const clash = LAUNCH_ONLY_FLAGS.filter((f) => values[f] !== undefined);
+    if (clash.length > 0) throw new Error(`--extension cannot be combined with --${clash.join(', --')}`);
+    return;
+  }
+  const clash = EXTENSION_ONLY_FLAGS.filter((f) => values[f] !== undefined);
+  if (clash.length > 0) throw new Error(`--${clash.join(', --')} require --extension`);
+};
+
+rejectConflicts();
 
 const workdir = values.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-http-'));
 const port = values.port ?? '0';
@@ -68,13 +96,23 @@ fs.mkdirSync(workdir, { recursive: true });
 process.chdir(workdir);
 process.env.PORT = port;
 
-if (values.browser) process.env.BROWSER = values.browser;
-if (values.profile) process.env.PROFILE = values.profile;
-if (values['profile-mode']) process.env.PROFILE_MODE = values['profile-mode'];
-if (values['user-data-dir']) process.env.USER_DATA_DIR = values['user-data-dir'];
-if (values.attach) process.env.ATTACH = values.attach;
-if (values.viewport) process.env.VIEWPORT = values.viewport;
+const ENV_FROM_FLAG: Record<string, string | undefined> = {
+  BROWSER: values.browser,
+  PROFILE: values.profile,
+  PROFILE_MODE: values['profile-mode'],
+  USER_DATA_DIR: values['user-data-dir'],
+  ATTACH: values.attach,
+  EXTENSION: values.extension ? '1' : undefined,
+  WINDOW: values.window,
+  TAB: values.tab,
+  VIEWPORT: values.viewport,
+};
+Object.entries(ENV_FROM_FLAG)
+  .filter((entry): entry is [string, string] => entry[1] !== undefined)
+  .forEach(([name, value]) => { process.env[name] = value; });
 
+const logFile = mirrorConsoleToFile(workdir);
 console.log(`[session] workdir: ${workdir}`);
+console.log(`[session] log: ${logFile}`);
 
 import './server';

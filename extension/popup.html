@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>pwhs bridge</title>
+    <style>
+      body { font: 13px system-ui, sans-serif; width: 280px; margin: 0; padding: 12px; color: #222; }
+      h1 { font-size: 14px; margin: 0 0 10px; }
+      label { display: block; margin: 8px 0 3px; color: #555; }
+      input { width: 100%; box-sizing: border-box; padding: 5px 6px; font: inherit; }
+      .row { display: flex; gap: 6px; margin-top: 10px; }
+      button { flex: 1; padding: 6px; font: inherit; cursor: pointer; }
+      #status { margin-top: 10px; padding: 8px; background: #f4f4f4; border-radius: 4px; white-space: pre-line; }
+      #id { color: #888; font-size: 11px; margin-top: 6px; word-break: break-all; }
+    </style>
+  </head>
+  <body>
+    <h1>pwhs bridge</h1>
+    <label for="label">Profile label</label>
+    <input id="label" placeholder="e.g. Work" />
+    <label for="token">Pairing token (from <code>pwhs token</code>)</label>
+    <input id="token" type="password" placeholder="paste token" />
+    <div class="row">
+      <button id="save">Save</button>
+      <button id="connect">Connect now</button>
+    </div>
+    <div id="status">…</div>
+    <div id="id"></div>
+    <script type="module" src="dist/popup.js"></script>
+  </body>
+</html>

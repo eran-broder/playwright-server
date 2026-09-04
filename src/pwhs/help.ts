@@ -2,18 +2,22 @@ export const HELP = `Usage: pwhs <verb> [args] [-p <port>]
 
 Lifecycle:
   pwhs up [server-flags]      Start a server, print its port to stdout
+                              e.g. pwhs up --extension --profile Work
   pwhs down [-p <port>]       Stop the server on <port>
   pwhs down --all             Stop every running server
   pwhs ls                     List running servers (pruned to live pids)
+  pwhs token                  Print the pairing token for the browser extension
 
 Browser:
   pwhs status                 GET /status
-  pwhs start [device] [viewport=emulated|window]
-                              POST /browser/start. viewport=window makes the
-                              page follow the OS window size (responsive mode).
+  pwhs start [device] [viewport=emulated|window] [profile=L] [window=N] [tab=N]
+                              POST /browser/start (restarts with merged options).
+                              viewport=window makes the page follow the OS window.
+                              profile/window/tab pick the extension-mode target.
   pwhs stop                   POST /browser/stop
-  pwhs restart [device] [viewport=emulated|window]
-                              POST /browser/restart
+  pwhs restart [same args]    POST /browser/restart
+  pwhs profiles               GET /profiles (extension mode: paired profiles,
+                              their windows and tabs)
 
 Navigation (waitUntil: load|domcontentloaded|networkidle|commit):
   pwhs nav <url> [waitUntil]  POST /navigate
@@ -57,11 +61,11 @@ Activity:
   pwhs check [since]
 
 Multi-tab:
-  pwhs pages
+  pwhs pages                  GET /pages (extension mode: every tab, with ids)
   pwhs switch <index>
   pwhs latest
 
-Port selection (every verb except up/ls):
+Port selection (every verb except up/ls/token):
   --port <n> / -p <n>     Per-call override.
   $PWHS_PORT              Sticky session for the shell.
   Caller cwd              Server launched from your cwd (or an ancestor of it);

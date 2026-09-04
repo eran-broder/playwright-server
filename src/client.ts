@@ -13,32 +13,45 @@ import {
   ResultResponse,
   TraceStopResponse,
   PagesResponse,
+  ProfilesResponse,
+  ProfileInfo,
 } from './pwhs/http';
 import { spawnServer } from './pwhs/spawn';
 import { BrowserKind, ProfileMode } from './profile-finder';
 import { SnapshotMode, WaitUntil } from './types';
+import { ViewportMode } from './viewport';
 import type { SnapshotOptions } from './types';
 import type { ClockTime, TraceStartOptions } from './browser-manager';
+import type { BrowserStartBody } from './request-schemas';
 
-export { BrowserKind, ProfileMode, SnapshotMode, WaitUntil };
-export type { ClockTime, SnapshotOptions, TraceStartOptions };
+export { BrowserKind, ProfileMode, SnapshotMode, WaitUntil, ViewportMode };
+export type { ClockTime, SnapshotOptions, TraceStartOptions, ProfileInfo };
+export type BrowserStartOptions = BrowserStartBody;
 
-export interface StartServerOptions {
+export interface StartServerOptions extends BrowserStartOptions {
   browser?: BrowserKind;
-  profile?: string;
   profileMode?: ProfileMode;
   userDataDir?: string;
   attach?: string;
+  extension?: boolean;
 }
 
+const FLAG_NAMES: Record<Exclude<keyof StartServerOptions, 'extension' | 'device'>, string> = {
+  browser: '--browser',
+  profile: '--profile',
+  profileMode: '--profile-mode',
+  userDataDir: '--user-data-dir',
+  attach: '--attach',
+  window: '--window',
+  tab: '--tab',
+  viewport: '--viewport',
+};
+
 const buildServerFlags = (opts: StartServerOptions): string[] => {
-  const flags: string[] = [];
-  if (opts.browser) flags.push('--browser', opts.browser);
-  if (opts.profile) flags.push('--profile', opts.profile);
-  if (opts.profileMode) flags.push('--profile-mode', opts.profileMode);
-  if (opts.userDataDir) flags.push('--user-data-dir', opts.userDataDir);
-  if (opts.attach) flags.push('--attach', opts.attach);
-  return flags;
+  const valued = (Object.entries(FLAG_NAMES) as Array<[keyof typeof FLAG_NAMES, string]>)
+    .filter(([key]) => opts[key] !== undefined)
+    .flatMap(([key, flag]) => [flag, String(opts[key])]);
+  return opts.extension ? [...valued, '--extension'] : valued;
 };
 
 const snapshotQuery = (selector?: string, opts: SnapshotOptions = {}): string => {
@@ -78,14 +91,17 @@ export class PwhsClient {
   status() {
     return this.get('/status', PassthroughResponse);
   }
-  start(device?: string) {
-    return this.post('/browser/start', device ? { device } : {}, PassthroughResponse);
+  start(opts: BrowserStartOptions = {}) {
+    return this.post('/browser/start', opts, PassthroughResponse);
   }
   stop() {
     return this.post('/browser/stop', {}, PassthroughResponse);
   }
-  restart(device?: string) {
-    return this.post('/browser/restart', device ? { device } : {}, PassthroughResponse);
+  restart(opts: BrowserStartOptions = {}) {
+    return this.post('/browser/restart', opts, PassthroughResponse);
+  }
+  async profiles(): Promise<ProfileInfo[]> {
+    return (await this.get('/profiles', ProfilesResponse)).profiles;
   }
 
   nav(url: string, waitUntil?: WaitUntil) {

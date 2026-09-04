@@ -1,29 +1,8 @@
 #!/usr/bin/env bash
 source "$(dirname "${BASH_SOURCE[0]}")/_helpers.sh"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DBG_PORT=19233
-DBG_DIR=$(mktemp -d)
-
-(cd "$ROOT" && node -e "
-const { chromium } = require('playwright');
-(async () => {
-  const ctx = await chromium.launchPersistentContext(process.argv[1], {
-    headless: true,
-    args: ['--remote-debugging-port=$DBG_PORT'],
-  });
-  await ctx.pages()[0].goto('data:text/html,<title>host-tab</title><h1>host</h1>');
-  await new Promise(() => {});
-})();
-" "$DBG_DIR") &
-DBG_PID=$!
-
-cleanup() {
-  kill $DBG_PID 2>/dev/null || true
-  cleanup_all_sessions
-}
-trap cleanup EXIT
+start_host_browser --debug-port "$DBG_PORT"
 
 section "wait for host browser CDP endpoint"
 for _ in $(seq 1 60); do

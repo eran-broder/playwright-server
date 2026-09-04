@@ -26,6 +26,7 @@ Each script auto-detects the local build via `node $SCRIPT_DIR/../dist/...`. To 
 | [55-native-extras.sh](55-native-extras.sh) | Raw CDP passthrough (`pwhs cdp <method> [json]`), Playwright tracing (`pwhs trace start/stop` → trace.zip for the trace viewer), and clock control (`pwhs clock set/install/ff`). |
 | [60-cli-contract.sh](60-cli-contract.sh) | Asserts the CLI contract: help text, error messages and exit codes, flag-anywhere parsing, every `pwhs` verb, multi-session ambiguity. |
 | [65-viewport-window.sh](65-viewport-window.sh) | `--viewport window`: the page follows the OS window, so resizing crosses media-query breakpoints and fires resize events (proven against [responsive.html](responsive.html)); `emulated` (default) pins 1280x720 regardless of window size; device + `viewport=window` is rejected. |
+| [75-extension.sh](75-extension.sh) | `--extension`: drive a normal browser through the **pwhs bridge** extension. Launches a host Chromium with the unpacked extension (via [_host-browser.ts](_host-browser.ts)), pairs it with `pwhs token`, then proves every verb through the bridge: profiles catalog, nav, ai refs, screenshots, activity, new tabs + `pages`/`switch`/`latest`, raw CDP incl. `Browser.*` translation, tracing, clock, downloads, `restart tab=N`, and that `stop` leaves the browser open. |
 | [70-agent-repl.sh](70-agent-repl.sh) | Drive the SDK from a stateful Node REPL ([agent-repl](https://github.com/eran-broder/agent-repl)). One `globalThis.s = await startServer()`, then many independent `nrepl exec` calls share the same browser. Skipped automatically when `nrepl` is not on PATH (override with `NREPL="node /path/to/agent-repl/node/src/cli.js"`). |
 
 ## Reading the tests
@@ -37,6 +38,8 @@ Each test file is pure behaviour — no setup boilerplate, no helper definitions
 - `cleanup_all_sessions` — wired into the EXIT trap by `start_session`.
 - `pwhs_play_heredoc` — feeds a heredoc to `pwhs play`, so multi-line JS doesn't fight bash quoting.
 - `assert_contains` / `assert_fails_with` / `assert_ok` — used by `60-cli-contract.sh`. Each updates `assert_pass` / `assert_fail` counters; call `print_summary_and_exit` at the end.
+- `start_host_browser [--token T --label L] [--debug-port N] [--url U]` — launches a host Chromium via [_host-browser.ts](_host-browser.ts) (with the unpacked extension when a token is given, or a remote-debugging port), waits for READY, and traps EXIT to kill the whole browser tree. Exposes `$HOST_LOG` and `$HOST_PID`.
+- `kill_tree pid` — kills a process and its children (taskkill on Windows).
 - `section "title"` — prints a labelled heading.
 - Multi-line JavaScript is passed via heredocs (`<<'EOF'`) so bash doesn't mangle quotes/backticks.
 - Output is shown raw (no jq/python parsing) so you see exactly what the API returns.

@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import { extractPort, resolvePort } from './pwhs/resolve';
-import { up, down, ls } from './pwhs/lifecycle';
+import { LifecycleVerb, up, down, ls, token } from './pwhs/lifecycle';
 import { isVerbName, runVerb } from './pwhs/verbs';
 import { print } from './pwhs/format';
 import { HELP } from './pwhs/help';
+
+const HELP_FLAGS = new Set(['-h', '--help']);
 
 const main = async (): Promise<void> => {
   const argv = process.argv.slice(2);
@@ -11,14 +13,15 @@ const main = async (): Promise<void> => {
   const verb = nonFlag[0];
   const args = nonFlag.slice(1);
 
-  if (!verb || verb === '-h' || verb === '--help') {
+  if (!verb || HELP_FLAGS.has(verb)) {
     process.stdout.write(HELP);
     return;
   }
 
-  if (verb === 'up') return up(args);
-  if (verb === 'ls') return ls();
-  if (verb === 'down') return down(flagPort, args);
+  if (verb === LifecycleVerb.Up) return up(args);
+  if (verb === LifecycleVerb.Ls) return ls();
+  if (verb === LifecycleVerb.Token) return token();
+  if (verb === LifecycleVerb.Down) return down(flagPort, args);
 
   if (!isVerbName(verb)) {
     throw new Error(`Unknown verb: ${verb}\n\n${HELP}`);

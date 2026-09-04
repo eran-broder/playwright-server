@@ -20,3 +20,17 @@ export const assertEndsWith = (label: string, value: string, suffix: string): vo
   }
   console.log(`  ${label}: ends with "${suffix}"`);
 };
+
+interface ProcessInfo {
+  type: string;
+  id: number;
+}
+
+export const browserPid = async (ctx: import('playwright').BrowserContext): Promise<number | ''> => {
+  const browser = ctx.browser();
+  if (!browser) return '';
+  const session = await browser.newBrowserCDPSession();
+  const { processInfo } = (await session.send('SystemInfo.getProcessInfo')) as { processInfo: ProcessInfo[] };
+  await session.detach();
+  return processInfo.find((p) => p.type === 'browser')?.id ?? '';
+};
